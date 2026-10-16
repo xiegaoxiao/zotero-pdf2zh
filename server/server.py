@@ -29,6 +29,7 @@ import socket  # 用于端口检查
 import time    # 用于 SSE 推送间隔
 import threading
 import uuid    # 用于生成任务唯一标识
+import tempfile
 from datetime import datetime  # 用于记录任务开始/结束时间
 # 导入自动更新模块
 from utils.auto_update import check_for_updates, fetch_and_show_notices, perform_update_optimized
@@ -36,6 +37,7 @@ from utils.auto_update import check_for_updates, fetch_and_show_notices, perform
 from utils.task_manager import task_manager
 # 导入带进度解析的命令执行器
 from utils.execute import execute_with_progress
+from utils.translation_outputs import require_pdf_outputs, publish_pdf_outputs
 
 _VALUE_ERROR_RE = re.compile(r'(?m)^ValueError:\s*(?P<msg>.+)$')
 
@@ -556,6 +558,10 @@ class PDFTranslator:
             fileList = []
             retList = self.translate_pdf_next(input_path, config, task_id)
 
+            expected_count = int(not config.no_mono) + int(not config.no_dual)
+            if len(retList) != expected_count:
+                raise RuntimeError(f"翻译引擎返回的文件不完整：需要 {expected_count} 个，实际收到 {len(retList)} 个；请查看前面的引擎错误日志。")
+
             if config.no_mono:
                 dual_path = retList[0]
             elif config.no_dual:
@@ -1064,6 +1070,19 @@ class PDFTranslator:
         return output_files
 
     def translate_pdf_next(self, input_path, config, task_id=None):
+        # The upstream CLI may log a translation error but still exit with 0.
+        # A private output directory proves these files belong to this run.
+        os.makedirs(output_folder, exist_ok=True)
+        with tempfile.TemporaryDirectory(prefix='.pdf2zh-next-', dir=output_folder) as job_output:
+            paths = self._translate_pdf_next_job(input_path, config, job_output, task_id)
+            published = publish_pdf_outputs(paths, output_folder)
+            if config.save_auto_extracted_glossary:
+                from pathlib import Path
+                for glossary in Path(job_output).glob('*.glossary.csv'):
+                    shutil.copy2(glossary, os.path.join(output_folder, glossary.name))
+            return published
+
+    def _translate_pdf_next_job(self, input_path, config, job_output, task_id=None):
         if config.service in pdf2zh_next_service_aliases:
             config.service = pdf2zh_next_service_aliases[config.service]
         config.update_config_file(config_path[pdf2zh_next])
@@ -1073,7 +1092,7 @@ class PDFTranslator:
             input_path,
             '--' + config.service,
             '--qps', str(config.qps),
-            '--output', str(output_folder),
+            '--output', str(job_output),
             '--lang-in', str(config.sourceLang),
             '--lang-out', str(config.targetLang),
             '--config-file', str(config_path[pdf2zh_next]), # 使用默认的config path路径
@@ -1116,10 +1135,10 @@ class PDFTranslator:
             cmd.extend(['--pool-max-worker', str(config.pool_size)])
 
         fileName = os.path.basename(input_path).replace('.pdf', '')
-        no_watermark_mono = os.path.join(output_folder, f"{fileName}.no_watermark.{config.targetLang}.mono.pdf")
-        no_watermark_dual = os.path.join(output_folder, f"{fileName}.no_watermark.{config.targetLang}.dual.pdf")
-        watermark_mono = os.path.join(output_folder, f"{fileName}.{config.targetLang}.mono.pdf")
-        watermark_dual = os.path.join(output_folder, f"{fileName}.{config.targetLang}.dual.pdf")
+        no_watermark_mono = os.path.join(job_output, f"{fileName}.no_watermark.{config.targetLang}.mono.pdf")
+        no_watermark_dual = os.path.join(job_output, f"{fileName}.no_watermark.{config.targetLang}.dual.pdf")
+        watermark_mono = os.path.join(job_output, f"{fileName}.{config.targetLang}.mono.pdf")
+        watermark_dual = os.path.join(job_output, f"{fileName}.{config.targetLang}.dual.pdf")
 
         output_path = []
         if config.no_watermark: # 无水印
@@ -1133,6 +1152,7 @@ class PDFTranslator:
             if not config.no_dual:
                 output_path.append(watermark_dual)
 
+        execution_error = None
         if args.enable_winexe and os.path.exists(args.winexe_path):
             cmd = [f"{args.winexe_path}"] + cmd[1:]  # Windows可执行文件
             # 将所有是路径的字段, 改为os.path.normpath
@@ -1213,19 +1233,50 @@ class PDFTranslator:
         elif args.enable_venv:
             # 使用 execute_with_progress 替代原来的 execute_in_env
             # 实时解析子进程输出中的进度信息并更新 task_manager
-            execute_with_progress(cmd, task_id, args, self.env_manager)
+            try:
+                execute_with_progress(cmd, task_id, args, self.env_manager)
+            except subprocess.CalledProcessError as exc:
+                execution_error = exc
+                print(f"⚠️ 翻译引擎退出失败，准备检查输入 PDF：{exc}")
         else:
-            execute_with_progress(cmd, task_id, args, None)
+            try:
+                execute_with_progress(cmd, task_id, args, None)
+            except subprocess.CalledProcessError as exc:
+                execution_error = exc
+                print(f"⚠️ 翻译引擎退出失败，准备检查输入 PDF：{exc}")
         existing = [p for p in output_path if os.path.exists(p)]
 
-        for f in existing:
+        if (execution_error or len(existing) != len(output_path)) and not args.enable_winexe:
+            # 出版社导出的 PDF 偶尔带损坏的内容流（MuPDF 报 unknown keyword），
+            # 引擎会在解析阶段直接失败。重写一份结构净化副本后重试一次。
+            repaired_path = _repair_damaged_pdf(input_path, job_output)
+            if repaired_path:
+                for partial in existing:
+                    os.remove(partial)
+                print(f"🛠️ 解析失败，已生成结构修复副本，正在重试: {os.path.basename(repaired_path)}")
+                retry_cmd = [
+                    str(repaired_path) if str(arg) == str(input_path) else arg
+                    for arg in cmd
+                ]
+                try:
+                    if args.enable_venv:
+                        execute_with_progress(retry_cmd, task_id, args, self.env_manager)
+                    else:
+                        execute_with_progress(retry_cmd, task_id, args, None)
+                    execution_error = None
+                except Exception as retry_error:
+                    execution_error = retry_error
+                    print(f"⚠️ 修复副本重试仍失败: {retry_error}")
+                existing = [p for p in output_path if os.path.exists(p)]
+
+        if execution_error is not None:
+            raise RuntimeError(f"翻译引擎执行失败，旧译文已保留：{execution_error}") from execution_error
+        require_pdf_outputs(output_path)
+        for f in output_path:
             size = os.path.getsize(f)
             print(f"🐲 pdf2zh_next 翻译成功, 生成文件: {f}, 大小为: {size/1024.0/1024.0:.2f} MB")
 
-        if not existing:
-            raise RuntimeError("操作失败，请查看详细日志。")
-
-        return existing
+        return output_path
 
     def run(self, host, port, debug=False):
         print(f"🌐 Server将启动在: http://{host}:{port}")
@@ -1238,6 +1289,30 @@ class PDFTranslator:
             threaded=True,
             request_handler=_QuietAccessHandler,
         )
+
+def _repair_damaged_pdf(input_path, output_folder):
+    """重写结构损坏的 PDF，返回修复副本路径；无法修复时返回 None。
+
+    部分出版社导出的 PDF 内容流带非法标记（MuPDF 报 "unknown keyword"），
+    翻译引擎会在解析阶段直接失败；用 PyMuPDF 重新序列化通常能得到干净副本。
+    修复副本放在 _repaired 子目录中，文件名与原件保持一致，保证引擎输出名不变。
+    """
+    try:
+        import pymupdf
+
+        with pymupdf.open(input_path) as source:
+            if source.page_count <= 0:
+                return None
+            repaired_dir = os.path.join(output_folder, '_repaired')
+            os.makedirs(repaired_dir, exist_ok=True)
+            repaired_path = os.path.join(repaired_dir, os.path.basename(input_path))
+            source.save(repaired_path, garbage=4, deflate=True, clean=True)
+        print(f"🛠️ 已创建 PDF 结构修复副本: {repaired_path}")
+        return repaired_path
+    except Exception as exc:
+        print(f"⚠️ PDF 结构修复失败: {exc}")
+        return None
+
 
 def prepare_path():
     os.makedirs(output_folder, exist_ok=True)
