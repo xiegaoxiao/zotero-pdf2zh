@@ -70,7 +70,8 @@ class LayoutRepairTest(unittest.TestCase):
                 (folder/name).write_text(original, encoding='utf8')
             (folder/'typesetting.py').write_text('class Engine:\n    def render(self):\n        for paragraph in paragraphs:\n            self.render_paragraph(paragraph, page, fonts)\n', encoding='utf8')
             numeric_import = 'from babeldoc.format.pdf.document_il.utils.paragraph_helper import (\n    is_pure_numeric_paragraph,\n)\n'
-            (folder/'il_translator.py').write_text(numeric_import,encoding='utf8')
+            (folder/'il_translator.py').write_text(numeric_import+'class Engine:\n    def get_translate_input(self):\n        placeholder_id = 1\n        for composition in compositions:\n            if len(placeholders) > 40 and not disable_rich_text_translate:\n                return None\n    def pre_translate(self):\n        translate_input = self.get_translate_input(\n            paragraph, page_font_map, disable_rich_text_translate\n        )\n',encoding='utf8')
+            (folder/'automatic_term_extractor.py').write_text('class Terms:\n    def clean(self, llm_output):\n        return llm_output.strip()\n',encoding='utf8')
             (folder/'il_translator_llm_only.py').write_text(numeric_import+'PROMPT = """- Produce fluent, professional $lang_out.\n"""\nclass Engine:\n    def translate(self):\n        if True:\n            json_format_input_str = json.dumps(\n                items)\n            if len(translation_results) != len(inputs):\n                raise ValueError()\n', encoding='utf8')
             self.assertTrue(install_layout_repair(temp))
             self.assertFalse(install_layout_repair(temp))

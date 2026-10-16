@@ -65,10 +65,30 @@ def install_layout_repair(env_dir):
             prompt = prompt.replace(numeric_import, numeric_hook, 1)
         translator_file = folder / 'il_translator.py'
         translator = translator_file.read_text(encoding='utf8')
+        original_translator = translator
         if numeric_hook not in translator:
             if translator.count(numeric_import) != 1:
                 raise RuntimeError('Unsupported BabelDOC numeric input filter; no files changed')
             translator = translator.replace(numeric_import, numeric_hook, 1)
+        weight_anchor = '        translate_input = self.get_translate_input(\n            paragraph, page_font_map, disable_rich_text_translate\n'
+        weight_hook = '        if self.support_llm_translate:\n            from zotero_pdf_layout_repair import preserve_source_font_weight\n            disable_rich_text_translate = preserve_source_font_weight(paragraph, page_font_map, disable_rich_text_translate)  # zotero preserve source emphasis\n\n'
+        if weight_hook not in translator:
+            if translator.count(weight_anchor) != 1:
+                raise RuntimeError('Unsupported BabelDOC font weight input; no files changed')
+            translator = translator.replace(weight_anchor, weight_hook + weight_anchor, 1)
+        weight_input_anchor = '        placeholder_id = 1\n'
+        weight_input_hook = '        from zotero_pdf_layout_repair import preserve_source_font_weight  # zotero weight overflow guard\n\n'
+        if weight_input_hook not in translator:
+            if translator.count(weight_input_anchor) != 1:
+                raise RuntimeError('Unsupported BabelDOC styled input; no files changed')
+            translator = translator.replace(weight_input_anchor, weight_input_hook + weight_input_anchor, 1)
+        overflow_anchor = '            if len(placeholders) > 40 and not disable_rich_text_translate:\n'
+        overflow_hook = '            if len(placeholders) > 40 and not disable_rich_text_translate and preserve_source_font_weight(paragraph, page_font_map, True):  # zotero keep emphasis in long paragraphs\n'
+        if overflow_hook not in translator:
+            if translator.count(overflow_anchor) != 1:
+                raise RuntimeError('Unsupported BabelDOC style overflow fallback; no files changed')
+            translator = translator.replace(overflow_anchor, overflow_hook, 1)
+        if translator != original_translator:
             ast.parse(translator)
             changes.append((translator_file, translator))
         prompt = prompt.replace(OLD_CONTINUATION_HINT, '')
@@ -115,6 +135,16 @@ def install_layout_repair(env_dir):
         if backend != original_backend:
             ast.parse(backend)
             changes.append((backend_file, backend))
+        term_file = folder / 'automatic_term_extractor.py'
+        term_source = term_file.read_text(encoding='utf8')
+        term_anchor = '        return llm_output.strip()\n'
+        term_hook = '        from zotero_pdf_term_json_repair import complete_term_json_array\n        return complete_term_json_array(llm_output)  # zotero preserve complete term entries\n'
+        if term_hook not in term_source:
+            if term_source.count(term_anchor) != 1:
+                raise RuntimeError('Unsupported BabelDOC term JSON cleaner; no files changed')
+            term_source = term_source.replace(term_anchor, term_hook, 1)
+            ast.parse(term_source)
+            changes.append((term_file, term_source))
         module = Path(__file__).with_name('pdf_layout_repair.py').read_text(encoding='utf8')
         helper = site / 'zotero_pdf_layout_repair.py'
         helper_changed = not helper.exists() or helper.read_text(encoding='utf8') != module
@@ -130,12 +160,17 @@ def install_layout_repair(env_dir):
         subset_changed = not subset_helper.exists() or subset_helper.read_text(encoding='utf8') != subset_module
         if subset_changed:
             subset_helper.write_text(subset_module, encoding='utf8')
+        term_module = Path(__file__).with_name('term_json_repair.py').read_text(encoding='utf8')
+        term_helper = site / 'zotero_pdf_term_json_repair.py'
+        term_changed = not term_helper.exists() or term_helper.read_text(encoding='utf8') != term_module
+        if term_changed:
+            term_helper.write_text(term_module, encoding='utf8')
         for target, source in changes:
             backup = target.with_suffix(target.suffix + '.before_zotero_layout_repair')
             if not backup.exists():
                 backup.write_bytes(target.read_bytes())
             target.write_text(source, encoding='utf8')
-    return bool(changes) or helper_changed or rotated_changed or subset_changed
+    return bool(changes) or helper_changed or rotated_changed or subset_changed or term_changed
 
 
 if __name__ == '__main__':

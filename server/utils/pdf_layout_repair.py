@@ -12,6 +12,31 @@ TEXT_LABELS = {'plain text', 'text', 'title', 'doc_title', 'paragraph_title'}
 BODY_LABELS = {'plain text', 'text', 'paragraph_hybrid'}
 
 
+def preserve_source_font_weight(paragraph, font_map, disable_rich_text):
+    """Retain weight changes even when other rich-text translation is disabled.
+
+    Uniform paragraphs already keep their base font. Mixed-weight paragraphs
+    need the engine's style placeholders to carry source emphasis into Chinese,
+    including the opening fragment of a sentence continued from another page.
+    """
+    if not disable_rich_text:
+        return False
+    style = getattr(paragraph, 'pdf_style', None)
+    base = font_map.get(getattr(style, 'font_id', None))
+    base_bold = getattr(base, 'bold', None)
+    if base_bold is None:
+        return True
+    for comp in paragraph.pdf_paragraph_composition:
+        run = getattr(comp, 'pdf_same_style_characters', None)
+        if run is None or not any((c.char_unicode or '').strip() for c in run.pdf_character):
+            continue
+        font = font_map.get(run.pdf_style.font_id)
+        bold = getattr(font, 'bold', None)
+        if bold is not None and bool(bold) != bool(base_bold):
+            return False
+    return True
+
+
 def is_numeric_label(paragraph):
     """Keep numeric tick runs at their original positions and font weights."""
     text = getattr(paragraph, 'unicode', None) or ''
