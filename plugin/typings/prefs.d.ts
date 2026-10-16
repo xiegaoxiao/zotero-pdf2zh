@@ -37,6 +37,7 @@ declare namespace _ZoteroTypes {
       "saveGlossary": boolean;
       "disableGlossary": boolean;
       "translateReferences": boolean;
+      "translateAuthors": boolean;
       "noDual": boolean;
       "noMono": boolean;
       "skipClean": boolean;

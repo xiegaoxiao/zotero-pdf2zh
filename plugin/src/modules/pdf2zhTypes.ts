@@ -46,6 +46,7 @@ export interface ServerConfig {
     saveGlossary: string;
     disableGlossary: string;
     translateReferences: string;
+    translateAuthors: string;
     noDual: string;
     noMono: string;
     skipClean: string;

@@ -38,6 +38,7 @@ pref("__prefsPrefix__.noWatermark", true);
 pref("__prefsPrefix__.saveGlossary", false);
 pref("__prefsPrefix__.disableGlossary", false);
 pref("__prefsPrefix__.translateReferences", false);
+pref("__prefsPrefix__.translateAuthors", false);
 pref("__prefsPrefix__.noDual", false);
 pref("__prefsPrefix__.noMono", false);
 pref("__prefsPrefix__.skipClean", false);

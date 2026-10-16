@@ -70,7 +70,7 @@ class TranslationOutputIsolationTest(unittest.TestCase):
     def test_repaired_retry_produces_a_complete_new_pair(self):
         calls=[]
         def execute(cmd,*args):
-            self.assertEqual(args[-1],{'ZOTERO_PDF2ZH_TRANSLATE_REFERENCES':'0', 'ZOTERO_PDF2ZH_THINKING_MODE':'disabled'})
+            self.assertEqual(args[-1],{'ZOTERO_PDF2ZH_TRANSLATE_REFERENCES':'0', 'ZOTERO_PDF2ZH_TRANSLATE_AUTHORS':'0', 'ZOTERO_PDF2ZH_THINKING_MODE':'disabled'})
             calls.append(cmd)
             if len(calls)==2:
                 self.staged_outputs(cmd)
@@ -84,7 +84,7 @@ class TranslationOutputIsolationTest(unittest.TestCase):
     def test_reference_translation_opt_in_is_forwarded_to_child(self):
         self.config.translate_references=True
         def execute(cmd,*args):
-            self.assertEqual(args[-1],{'ZOTERO_PDF2ZH_TRANSLATE_REFERENCES':'1', 'ZOTERO_PDF2ZH_THINKING_MODE':'disabled'})
+            self.assertEqual(args[-1],{'ZOTERO_PDF2ZH_TRANSLATE_REFERENCES':'1', 'ZOTERO_PDF2ZH_TRANSLATE_AUTHORS':'0', 'ZOTERO_PDF2ZH_THINKING_MODE':'disabled'})
             self.staged_outputs(cmd)
         with patch.object(server,'execute_with_progress',side_effect=execute):
             self.translator.translate_pdf_next('paper.pdf',self.config)
@@ -95,6 +95,15 @@ class TranslationOutputIsolationTest(unittest.TestCase):
             self.assertEqual(args[-1]['ZOTERO_PDF2ZH_THINKING_MODE'], 'enabled')
             self.staged_outputs(cmd)
         with patch.object(server,'execute_with_progress',side_effect=execute):
+            self.translator.translate_pdf_next('paper.pdf',self.config)
+
+    def test_author_translation_opt_in_is_forwarded_without_changing_parent_environment(self):
+        self.config.translate_authors=True
+        def execute(cmd,*args):
+            self.assertEqual(args[-1]['ZOTERO_PDF2ZH_TRANSLATE_AUTHORS'],'1')
+            self.assertEqual(os.environ['ZOTERO_PDF2ZH_TRANSLATE_AUTHORS'],'parent')
+            self.staged_outputs(cmd)
+        with patch.dict(os.environ,{'ZOTERO_PDF2ZH_TRANSLATE_AUTHORS':'parent'}),patch.object(server,'execute_with_progress',side_effect=execute):
             self.translator.translate_pdf_next('paper.pdf',self.config)
 
     def test_nonzero_exit_is_failure_even_when_files_exist(self):

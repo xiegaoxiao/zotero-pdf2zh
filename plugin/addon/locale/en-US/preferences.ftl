@@ -64,4 +64,5 @@ pref-llmapi-totop     = Pin
 pref-check-connection = Check Connection
 
 pref-translateReferences = Translate references (off by default)
+pref-translateAuthors = Translate authors (off by default; preserve original names and byline)
     .title = When off, preserve detected bibliography sections in the source language. Requires this fork’s server and managed pdf2zh_next runtime; unheaded bibliographies may not be detected.

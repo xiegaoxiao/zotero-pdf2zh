@@ -43,6 +43,14 @@ def install_layout_repair(env_dir):
                 source = source.replace(anchor, anchor + f'        {MARKER}\n        from zotero_pdf_layout_repair import {func}\n        {func}({args})\n', 1)
                 ast.parse(source)
                 changes.append((target, source))
+            if name == 'styles_and_formulas.py' and 'prepare_author_paragraphs' not in source:
+                author_hook = '        from zotero_pdf_author_filter import prepare_author_paragraphs\n        prepare_author_paragraphs(page, self.translation_config)  # zotero author rows\n'
+                if source.count(anchor) != 1:
+                    raise RuntimeError('Unsupported BabelDOC author parsing hook; no files changed')
+                source = source.replace(anchor, anchor + author_hook, 1)
+                ast.parse(source)
+                changes = [(p, s) for p, s in changes if p != target]
+                changes.append((target, source))
         render_file = folder / 'typesetting.py'
         render = render_file.read_text(encoding='utf8')
         render = render.replace('            from zotero_pdf_layout_repair import center_translated_title\n            center_translated_title(paragraph)  # zotero centered title repair\n', '')
@@ -53,6 +61,14 @@ def install_layout_repair(env_dir):
                 raise RuntimeError('Unsupported BabelDOC title renderer; no files changed')
             render = render.replace(render_anchor, render_hook, 1)
             ast.parse(render)
+            changes.append((render_file, render))
+        author_render = '            from zotero_pdf_author_filter import align_translated_author\n            align_translated_author(paragraph, self.translation_config)  # zotero author alignment\n'
+        if author_render not in render:
+            if render.count(render_hook) != 1:
+                raise RuntimeError('Unsupported BabelDOC author rendering hook; no files changed')
+            render = render.replace(render_hook, render_hook + author_render, 1)
+            ast.parse(render)
+            changes = [(p, s) for p, s in changes if p != render_file]
             changes.append((render_file, render))
         prompt_file = folder / 'il_translator_llm_only.py'
         prompt = prompt_file.read_text(encoding='utf8')
@@ -72,6 +88,11 @@ def install_layout_repair(env_dir):
             if translator.count(reference_anchor) != 1:
                 raise RuntimeError('Unsupported BabelDOC bibliography guard; no files changed')
             translator = translator.replace(reference_anchor, reference_guard + reference_anchor, 1)
+        author_guard = '        if id(paragraph) in getattr(self.translation_config, "_zotero_author_paragraph_ids", ()):\n            return None, None  # zotero preserve author bylines\n'
+        if author_guard not in translator:
+            if translator.count(reference_anchor) != 1:
+                raise RuntimeError('Unsupported BabelDOC author translation guard; no files changed')
+            translator = translator.replace(reference_anchor, author_guard + reference_anchor, 1)
         if numeric_hook not in translator:
             if translator.count(numeric_import) != 1:
                 raise RuntimeError('Unsupported BabelDOC numeric input filter; no files changed')
@@ -183,6 +204,11 @@ def install_layout_repair(env_dir):
         performance_changed = not performance_helper.exists() or performance_helper.read_text(encoding='utf8') != performance_module
         if performance_changed:
             performance_helper.write_text(performance_module, encoding='utf8')
+        author_module = Path(__file__).with_name('author_filter.py').read_text(encoding='utf8')
+        author_helper = site / 'zotero_pdf_author_filter.py'
+        author_changed = not author_helper.exists() or author_helper.read_text(encoding='utf8') != author_module
+        if author_changed:
+            author_helper.write_text(author_module, encoding='utf8')
         reference_module = Path(__file__).with_name('reference_filter.py').read_text(encoding='utf8')
         reference_helper = site / 'zotero_pdf_reference_filter.py'
         reference_changed = not reference_helper.exists() or reference_helper.read_text(encoding='utf8') != reference_module
@@ -213,7 +239,7 @@ def install_layout_repair(env_dir):
             if not backup.exists():
                 backup.write_bytes(target.read_bytes())
             target.write_text(source, encoding='utf8')
-    return bool(changes) or helper_changed or rotated_changed or subset_changed or term_changed or reference_changed or performance_changed
+    return bool(changes) or helper_changed or rotated_changed or subset_changed or term_changed or reference_changed or performance_changed or author_changed
 
 
 if __name__ == '__main__':

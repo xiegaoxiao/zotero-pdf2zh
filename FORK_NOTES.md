@@ -1,6 +1,6 @@
 # Fork 维护说明
 
-本仓库基于 [guaguastandup/zotero-pdf2zh](https://github.com/guaguastandup/zotero-pdf2zh)，保留原作者署名、提交历史和 AGPL-3.0 许可证。以下改动涉及 Python 服务端及插件设置界面。插件版本为 `4.1.8-fork.6`，更新地址指向本 Fork，避免自动更新时覆盖自定义设置。
+本仓库基于 [guaguastandup/zotero-pdf2zh](https://github.com/guaguastandup/zotero-pdf2zh)，保留原作者署名、提交历史和 AGPL-3.0 许可证。以下改动涉及 Python 服务端及插件设置界面。插件版本为 `4.1.8-fork.7`，更新地址指向本 Fork，避免自动更新时覆盖自定义设置。
 
 ## 新增修复
 
@@ -25,6 +25,8 @@
 
 14. **Fork 发布与更新链接**：插件主页、下载链接、服务端更新源均指向 `xiegaoxiao/zotero-pdf2zh`，保留原作者署名和插件 ID 以支持覆盖更新。统一插件与 Server 版本，移除源码树中的旧 XPI 和静态 `server.zip`；发布时从 Git 跟踪的源码生成干净附件，校验 XPI manifest、版本、下载 URL 和哈希。版本 Release 使用固定附件名 `zotero-pdf-2-zh.xpi` / `server.zip`，`release` 标签仅提供更新清单，不作为最新版本。安装与下载应使用本 Fork 的 [最新 Release](https://github.com/xiegaoxiao/zotero-pdf2zh/releases/latest)。
 
+15. **作者翻译开关与署名排版**：在 2.x 设置中新增“翻译作者”，默认关闭。首页标题与摘要之间识别出的作者署名保留原文字形、字体和坐标，并跳过正文翻译与术语提取。开启后先合并同一基线、相邻的作者片段，避免将姓名拆开后重复补姓；单行中文署名恢复原有居中或左对齐位置及基线，独立作者列保持分开。该规则不保护全文所有人名，也不将机构、地理信息或作者简介统一作为署名。适用于托管的 `pdf2zh_next` 环境。
+
 详见 [翻译输出处理](server/doc/translation-errors.md) 和 [PDF 排版修复](server/doc/layout-repair.md)。
 
 ## 使用与验证
@@ -45,6 +47,7 @@ python -m unittest discover -s tests -p test_term_json_repair.py -v
 python -m unittest discover -s tests -p test_reference_filter.py -v
 python -m unittest discover -s tests -p test_layout_performance.py -v
 python -m unittest discover -s tests -p test_task_cancellation.py -v
+python -m unittest discover -s tests -p test_author_filter.py -v
 ```
 
 以上回归测试不需要调用翻译 API。版面缓存测试需使用安装了 NumPy、ONNX Runtime 和 BabelDOC 的托管引擎环境。中文字体相关的一项测试在缺少 BabelDOC 缓存字体时跳过。数字字体及斜角 Type3 标签测试使用自行生成的合成字形文件，未分发个人论文或第三方字体。插件在 `plugin` 目录运行 `npm ci`、`npm test` 和 `npm run build`；XPI 位于 `plugin/build/`，可通过 Zotero 插件管理器“从文件安装插件”安装。

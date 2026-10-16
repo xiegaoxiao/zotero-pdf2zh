@@ -29,6 +29,8 @@
 >
 > 
 
+> 🚀 **v4.1.8-fork.7**：新增“翻译作者”开关，默认保留原文姓名和署名位置；修复作者行拆分导致的重复姓名与偏移。详见 [发布说明](./docs/releases/v4.1.8-fork.7.md)。
+>
 > 🚀 **v4.1.8-fork.6**：智谱 Flash、通用思考开关、API 连通性测试、任务取消与 PDF 排版修复。请同时更新插件和 Server。详见 [发布说明](./docs/releases/v4.1.8-fork.6.md)。
 >
 > 🚀 **v4.1.7**：远程/Docker 翻译完成后优先 HTTP 挂附件；新旧插件协议兼容；进度条显示翻译百分比；加固附件文件名；补齐 pdf2zh_next 额外字段（含 `*_enable_json_mode`），LLM 编辑器可从下拉列表添加，默认不开启 JSON mode。请同时更新插件和 Server。
@@ -240,7 +242,7 @@ python server.py --env_tool=conda
 
 ## 第四步：下载并安装插件
 
-最新版本 v4.1.8-fork.6 [下载链接](https://github.com/xiegaoxiao/zotero-pdf2zh/releases/latest/download/zotero-pdf-2-zh.xpi)
+最新版本 v4.1.8-fork.7 [下载链接](https://github.com/xiegaoxiao/zotero-pdf2zh/releases/latest/download/zotero-pdf-2-zh.xpi)
 
 1. 安装方式：在zotero中打开“工具-插件”，将xpi文件拖入，进行安装。（若拖入后功能未生效，请重启Zotero）
 2. 如何更新：您可以在zotero中检查更新，或选择自动更新，来获取最新版本插件。

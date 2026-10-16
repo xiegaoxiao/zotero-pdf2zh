@@ -113,6 +113,9 @@ class LayoutRepairTest(unittest.TestCase):
             self.assertEqual((folder/'paragraph_finder.py.before_zotero_layout_repair').read_text(), original)
             self.assertIn('preserve_reference_paragraphs(docs, translation_config)', (folder.parent.parent/'high_level.py').read_text())
             self.assertTrue((Path(temp)/'Lib/site-packages/zotero_pdf_reference_filter.py').exists())
+            self.assertTrue((Path(temp)/'Lib/site-packages/zotero_pdf_author_filter.py').exists())
+            self.assertEqual((folder/'styles_and_formulas.py').read_text().count('prepare_author_paragraphs(page,'),1)
+            self.assertIn('_zotero_author_paragraph_ids', (folder/'il_translator.py').read_text())
             self.assertIn('@cached_layout_predict', (vision/'doclayout.py').read_text())
 
     def test_only_unfinished_body_sentence_on_adjacent_pages_is_linked(self):

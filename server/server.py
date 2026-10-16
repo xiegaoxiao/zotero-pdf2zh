@@ -41,7 +41,7 @@ from utils.translation_outputs import require_pdf_outputs, publish_pdf_outputs
 
 _VALUE_ERROR_RE = re.compile(r'(?m)^ValueError:\s*(?P<msg>.+)$')
 
-__version__ = "4.1.8-fork.6"
+__version__ = "4.1.8-fork.7"
 update_log = "智谱 Flash 配置、精简服务入口、通用思考开关、API 连通性测试、可关闭的进度窗口与任务取消，以及 PDF 首字下沉、字重、图表和参考文献修复。请同时更新插件和 Server。"
 
 ############# config file #########
@@ -1174,6 +1174,7 @@ class PDFTranslator:
                 output_path.append(watermark_dual)
 
         reference_env = {'ZOTERO_PDF2ZH_TRANSLATE_REFERENCES': '1' if config.translate_references else '0'}
+        reference_env['ZOTERO_PDF2ZH_TRANSLATE_AUTHORS'] = '1' if config.translate_authors else '0'
         reference_env['ZOTERO_PDF2ZH_THINKING_MODE'] = config.thinking_mode
         execution_error = None
         if args.enable_winexe and os.path.exists(args.winexe_path):

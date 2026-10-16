@@ -1171,6 +1171,8 @@ export class PDF2zhHelperFactory {
             disableGlossary: getPref("disableGlossary")?.toString() || "",
             translateReferences:
                 getPref("translateReferences")?.toString() || "false",
+            translateAuthors:
+                getPref("translateAuthors")?.toString() || "false",
             noDual: getPref("noDual")?.toString() || "",
             noMono: getPref("noMono")?.toString() || "",
             skipClean: getPref("skipClean")?.toString() || "",

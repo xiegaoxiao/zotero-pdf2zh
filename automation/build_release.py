@@ -56,7 +56,8 @@ def build(output):
     names = sorted(n.decode('utf8') for n in tracked.split(b'\0') if n)
     required = {'server/server.py', 'server/config/config.toml.example',
                 'server/update_packages.py', 'server/utils/thinking_control.py',
-                'server/utils/task_manager.py', 'server/utils/pdf_layout_repair.py'}
+                'server/utils/task_manager.py', 'server/utils/pdf_layout_repair.py',
+                'server/utils/author_filter.py'}
     if not required.issubset(names):
         raise ValueError('Stage all release sources before packaging')
     private = re.compile(r'(^|/)(?:__pycache__|\.venv|tmp|output|translated|zotero-pdf2zh[^/]*venv[^/]*)/|'
