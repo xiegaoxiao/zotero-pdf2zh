@@ -107,8 +107,13 @@ class LayoutRepairTest(unittest.TestCase):
             (vision/'doclayout.py').write_text('import pymupdf\nclass OnnxModel:\n    def __init__(self):\n        self.model = onnxruntime.InferenceSession(\n            model,\n            providers=providers,\n        )\n    def predict(self, image, imgsz=800, batch_size=16, **kwargs):\n        return []\n',encoding='utf8')
             (folder/'automatic_term_extractor.py').write_text('class Terms:\n    def clean(self, llm_output):\n        return llm_output.strip()\n',encoding='utf8')
             (folder/'il_translator_llm_only.py').write_text(numeric_import+'PROMPT = """- Produce fluent, professional $lang_out.\n"""\nclass Engine:\n    def translate(self):\n        if True:\n            json_format_input_str = json.dumps(\n                items)\n            if len(translation_results) != len(inputs):\n                raise ValueError()\n', encoding='utf8')
+            prompt_file = folder/'il_translator_llm_only.py'
+            with prompt_file.open('a', encoding='utf8') as stream:
+                stream.write('            for input_ in inputs:\n                input_[2].unicode = input_[5]\n')
             self.assertTrue(install_layout_repair(temp))
             self.assertFalse(install_layout_repair(temp))
+            self.assertIn('paragraph_unicodes[input_index]', prompt_file.read_text())
+            self.assertNotIn('input_[2].unicode = input_[5]', prompt_file.read_text())
             self.assertIn('existing_custom_fix(page)', (folder/'paragraph_finder.py').read_text())
             self.assertEqual((folder/'paragraph_finder.py.before_zotero_layout_repair').read_text(), original)
             self.assertIn('preserve_reference_paragraphs(docs, translation_config)', (folder.parent.parent/'high_level.py').read_text())

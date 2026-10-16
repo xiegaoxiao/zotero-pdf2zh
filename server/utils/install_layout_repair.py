@@ -141,6 +141,12 @@ def install_layout_repair(env_dir):
             if prompt.count(result_anchor) != 1:
                 raise RuntimeError('Unsupported BabelDOC batch output; no files changed')
             prompt = prompt.replace(result_anchor, result_hook + result_anchor, 1)
+        # Failed batch validation must restore each original paragraph, rather
+        # than assigning the shared list of all source strings as its unicode.
+        fallback_anchor = '            for input_ in inputs:\n                input_[2].unicode = input_[5]\n'
+        fallback_hook = '            for input_index, input_ in enumerate(inputs):\n                input_[2].unicode = paragraph_unicodes[input_index]  # zotero restore batch fallback text\n'
+        if fallback_anchor in prompt:
+            prompt = prompt.replace(fallback_anchor, fallback_hook, 1)
         if prompt != original_prompt:
             ast.parse(prompt)
             changes.append((prompt_file, prompt))
