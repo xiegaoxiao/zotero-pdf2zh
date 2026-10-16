@@ -1,13 +1,124 @@
 import unittest
 import unicodedata
+import tempfile
+from pathlib import Path
 from types import SimpleNamespace as NS
 import pymupdf as fitz
 
-from utils.rotated_labels import collect_rotated_labels, draw_rotated_label
+from utils.rotated_labels import (
+    collect_rotated_labels, draw_rotated_label, collect_oblique_labels,
+    restore_oblique_labels, repair_rotated_labels,
+)
 from utils.pdf_layout_repair import deduplicate_text_layouts
 
 
 class FigureLabelTests(unittest.TestCase):
+    def test_oblique_source_font_geometry_color_and_background_survive(self):
+        source, target = fitz.open(), fitz.open()
+        src = source.new_page(width=300, height=300)
+        out = target.new_page(width=300, height=300)
+        for page in (src, out):
+            page.draw_rect(page.rect, color=None, fill=(.1, .3, .8))
+        for angle, origin, text in [(45, (60, 80), 'NE'), (-30, (150, 90), 'HA'),
+                                    (135, (150, 180), 'SU')]:
+            point = fitz.Point(origin)
+            src.insert_text(point, text, fontname='tiro', fontsize=12,
+                            morph=(point, fitz.Matrix(angle)), color=(1, 1, 1))
+        src.insert_text((30, 250), 'Source caption')
+        out.insert_text((30, 250), 'Target caption')
+        reports = restore_oblique_labels(out, src)
+        self.assertEqual(len(reports), 3)
+        self.assertEqual(restore_oblique_labels(out, source[0]), [])
+        self.assertNotIn('Source caption', out.get_text())
+        self.assertIn('Target caption', out.get_text())
+        # Glyph outlines, colors and exact positions matter as well as text.
+        rect = fitz.Rect(20, 20, 220, 210)
+        self.assertEqual(source[0].get_pixmap(clip=rect, matrix=fitz.Matrix(3, 3)).samples,
+                         out.get_pixmap(clip=rect, matrix=fitz.Matrix(3, 3)).samples)
+
+    def test_type3_custom_codes_survive_font_subset_save_and_reopen(self):
+        source, target = fitz.open(), fitz.open()
+        src = source.new_page(width=200, height=200)
+        def obj(value, stream=None):
+            xref = source.get_new_xref()
+            source.update_object(xref, value)
+            if stream is not None:
+                source.update_stream(xref, stream)
+            return xref
+        # Original vector glyphs, with PDF codes 1 and 2 instead of ASCII.
+        n = obj('<< >>', b'600 0 0 0 600 700 d1 0 0 100 700 re f 500 0 100 700 re f')
+        e = obj('<< >>', b'600 0 0 0 600 700 d1 0 0 100 700 re f 0 600 600 100 re f')
+        font = obj(f'<< /Type /Font /Subtype /Type3 /BaseFont /TestLabels /Name /TestLabels '
+                   f'/FontBBox [0 0 600 700] /FontMatrix [.001 0 0 .001 0 0] '
+                   f'/CharProcs << /N {n} 0 R /E {e} 0 R >> '
+                   f'/Encoding << /Differences [1 /N /E] >> /FirstChar 1 /LastChar 2 '
+                   f'/Widths [600 600] /Resources << >> >>')
+        source.xref_set_key(src.xref, 'Resources', f'<< /Font << /F1 {font} 0 R >> >>')
+        src.set_contents(obj('<< >>', b'BT /F1 12 Tf .70710678 .70710678 -.70710678 .70710678 80 100 Tm <0102> Tj ET'))
+        out = target.new_page(width=200, height=200)
+        report = restore_oblique_labels(out, src)
+        self.assertEqual([r['source'] for r in report], ['NE'])
+        self.assertEqual(''.join(out.get_text().split()), 'NE')
+        target.subset_fonts()
+        reopened = fitz.open(stream=target.tobytes(), filetype='pdf')
+        self.assertEqual(''.join(reopened[0].get_text().split()), 'NE')
+        self.assertEqual(source[0].get_pixmap(matrix=fitz.Matrix(4, 4)).samples,
+                         reopened[0].get_pixmap(matrix=fitz.Matrix(4, 4)).samples)
+
+    def test_only_missing_glyphs_are_restored(self):
+        source, target = fitz.open(), fitz.open()
+        src, out = source.new_page(), target.new_page()
+        point = fitz.Point(80, 100)
+        for page, text in [(src, 'NE'), (out, 'N')]:
+            page.insert_text(point, text, fontsize=12, morph=(point, fitz.Matrix(45)))
+        report = restore_oblique_labels(out, src)
+        self.assertEqual(sum(r['glyphs'] for r in report), 1)
+        self.assertEqual(sorted(c[0] for s in out.get_texttrace() for c in s['chars']),
+                         [ord('E'), ord('N')])
+
+    def test_oblique_cid_font_encoding_is_preserved(self):
+        source, target = fitz.open(), fitz.open()
+        src, out = source.new_page(), target.new_page()
+        point = fitz.Point(80, 100)
+        src.insert_text(point, '快乐', fontname='china-s', fontsize=12,
+                        morph=(point, fitz.Matrix(45)))
+        restore_oblique_labels(out, src)
+        self.assertIn('快乐', out.get_text())
+        self.assertEqual(source[0].get_pixmap().samples, out.get_pixmap().samples)
+
+    def test_horizontal_vertical_and_url_text_are_excluded(self):
+        source = fitz.open()
+        src = source.new_page()
+        src.insert_text((40, 40), 'NE')
+        src.insert_text((80, 80), 'NE', rotate=90)
+        point = fitz.Point(100, 200)
+        src.insert_text(point, 'https://example.org', morph=(point, fitz.Matrix(45)))
+        self.assertEqual(collect_oblique_labels(src), [])
+
+    def test_selected_page_hook_preserves_codes_without_translation_calls(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / 'source.pdf'
+            source, target = fitz.open(), fitz.open()
+            for _ in range(2):
+                src = source.new_page()
+                point = fitz.Point(80, 100)
+                src.insert_text(point, 'NE', morph=(point, fitz.Matrix(45)))
+                target.new_page()
+            source.save(path)
+            source.close()
+            def translate(text):
+                self.fail('Oblique source codes must not be sent to the translator')
+            config = NS(input_file=str(path), skip_translation=False,
+                        only_parse_generate_pdf=False, should_translate_page=lambda n: n == 2,
+                        raise_if_cancelled=lambda: None, translator=NS(translate=translate))
+            document = NS(page=[NS(page_number=0), NS(page_number=1)])
+            report = repair_rotated_labels(target, config, document)
+            self.assertEqual([r['page'] for r in report], [2])
+            self.assertEqual(target[0].get_text(), '')
+            self.assertEqual(target[1].get_text().strip(), 'NE')
+            config.skip_translation = True
+            self.assertEqual(repair_rotated_labels(target, config, document), [])
+
     def test_identical_glyph_overprints_are_removed_but_separate_words_survive(self):
         def char(x, paint='0 g'):
             return NS(char_unicode='A', xobj_id=1, box=NS(x=x,y=10,x2=x+5,y2=20),
