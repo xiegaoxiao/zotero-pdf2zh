@@ -174,7 +174,7 @@ Gitee Release attachments may show a security captcha or 404, so the updater als
 Manual download:
 
 ```text
-https://github.com/guaguastandup/zotero-pdf2zh/releases/latest/download/server.zip
+https://github.com/xiegaoxiao/zotero-pdf2zh/releases/latest/download/server.zip
 https://gitee.com/guaguastandup/zotero-pdf2zh/raw/v4.1.1/server.zip
 ```
 

@@ -27,7 +27,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
   ZOTERO_PDF2ZH_FROM_IMAGE=awwaawwa/pdfmathtranslate-next:latest
 
 # server.zip 下载地址（默认官方 raw；下面给出镜像“注释示例”，需要时自行改）
-ARG SERVER_ZIP_URL="https://raw.githubusercontent.com/guaguastandup/zotero-pdf2zh/main/server.zip"
+ARG SERVER_ZIP_URL="https://github.com/xiegaoxiao/zotero-pdf2zh/releases/latest/download/server.zip"
 # 可选：GitHub 代理前缀（默认空，不启用）
 # 需要时可在 docker-compose 的 build.args 里传入，例如 https://ghproxy.net/
 ARG GITHUB_PROXY_PREFIX=""

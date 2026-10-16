@@ -207,6 +207,13 @@ class Config:
             'threadnum': request_data.get('llm_api', {}).get('threadNum', self.thread_num), # TODO, 为每个服务单独配置线程数, 暂时不实现
             'extraData': request_data.get('llm_api', {}).get('extraData', {})
         }
+        extra_data = dict(self.llm_api.get('extraData') or {})
+        self.thinking_mode = 'enabled' if stringToBoolean(request_data.get('enableThinking', False)) else 'disabled'
+        # The global switch overrides any old provider-specific thinking choice.
+        extra_data.pop('llm_thinking_mode', None)
+        if self.service == 'deepseek':
+            extra_data['deepseek_thinking_mode'] = self.thinking_mode
+        self.llm_api['extraData'] = extra_data
 
     def update_config_file(self, config_file):
         service = self.service

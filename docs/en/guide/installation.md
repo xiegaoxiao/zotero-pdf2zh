@@ -18,7 +18,7 @@ Use **v4.1.1** or later. v4.1.0 looked for Conda Python at `<env>\\Scripts\\pyth
 Download `server.zip` from the latest GitHub Release. Do not use a static zip from the repository `main` branch:
 
 ```text
-https://github.com/guaguastandup/zotero-pdf2zh/releases/latest/download/server.zip
+https://github.com/xiegaoxiao/zotero-pdf2zh/releases/latest/download/server.zip
 ```
 
 After extracting, the layout should look like:
@@ -174,7 +174,7 @@ The Server will not update your system Python environment in this mode. Runtime 
 Latest XPI:
 
 ```text
-https://github.com/guaguastandup/zotero-pdf2zh/releases/latest/download/zotero-pdf-2-zh.xpi
+https://github.com/xiegaoxiao/zotero-pdf2zh/releases/latest/download/zotero-pdf-2-zh.xpi
 ```
 
 Steps:

@@ -9,8 +9,8 @@ pref("__prefsPrefix__.targetLangSelect", "zh-CN");
 pref("__prefsPrefix__.engine", "pdf2zh_next");
 pref("__prefsPrefix__.engineSelect", "pdf2zh_next");
 
-pref("__prefsPrefix__.service", "bing");
-pref("__prefsPrefix__.serviceSelect", "bing");
+pref("__prefsPrefix__.service", "");
+pref("__prefsPrefix__.serviceSelect", "");
 pref("__prefsPrefix__.next_service", "siliconflowfree");
 pref("__prefsPrefix__.next_serviceSelect", "siliconflowfree");
 
@@ -18,6 +18,7 @@ pref("__prefsPrefix__.skipLastPages", 0);
 pref("__prefsPrefix__.threadNum", 4);
 pref("__prefsPrefix__.qps", 10);
 pref("__prefsPrefix__.poolSize", 0);
+pref("__prefsPrefix__.enableThinking", false);
 pref("__prefsPrefix__.rename", true);
 pref("__prefsPrefix__.showProgress", true);
 

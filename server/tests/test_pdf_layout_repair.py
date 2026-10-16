@@ -59,6 +59,36 @@ class LayoutRepairTest(unittest.TestCase):
             normalize_drop_cap_words(page)
             self.assertEqual(chars[0].pdf_style.font_id, 'bold')
 
+    def test_small_caps_at_eighty_percent_are_prose_and_keep_a_normal_baseline(self):
+        page, chars = drop_cap_page()
+        page.pdf_paragraph[0].unicode = 'F ACIAL expressions'
+        for c in chars[1:6]:
+            c.pdf_style.font_size = 9.96 * 0.8
+        normalize_drop_cap_words(page)
+        self.assertTrue(all(c.pdf_style.font_size == 9.96 for c in chars[:6]))
+        self.assertTrue(all(c.box.y == chars[7].box.y for c in chars[:6]))
+        self.assertAlmostEqual(chars[0].box.y2 - chars[0].box.y, 9.96)
+        self.assertEqual(page.pdf_paragraph[0].unicode, 'FACIAL expressions')
+        self.assertEqual(chars[0].box.x2, chars[1].box.x)
+
+    def test_two_letter_drop_cap_word_is_normalized_without_a_word_dictionary(self):
+        page, chars = drop_cap_page()
+        chars[:] = [chars[0], chars[1], *chars[6:]]
+        chars[0].char_unicode, chars[1].char_unicode = 'I', 'N'
+        normalize_drop_cap_words(page)
+        self.assertEqual(chars[0].pdf_style.font_size, 9.96)
+        self.assertEqual(''.join(c.char_unicode for c in chars), 'IN expressions')
+
+    def test_raised_initial_and_lowered_suffix_are_not_drop_caps(self):
+        for mode in ['raised', 'suffix']:
+            page, chars = drop_cap_page()
+            if mode == 'raised':
+                chars[0].box.y = 310
+            else:
+                chars[1].box.y = 280
+            normalize_drop_cap_words(page)
+            self.assertEqual(chars[0].pdf_style.font_id, 'bold')
+
     def test_install_is_idempotent_and_preserves_preexisting_engine_edits(self):
         with tempfile.TemporaryDirectory() as temp:
             folder = Path(temp)/'Lib/site-packages/babeldoc/format/pdf/document_il/midend'

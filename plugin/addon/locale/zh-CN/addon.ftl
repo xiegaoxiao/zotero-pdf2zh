@@ -31,6 +31,15 @@ operation-error-crop-compare-terminal = 该 PDF 已经是“双语对照（裁�
 operation-error-compare-terminal = 该 PDF 已经是“双语对照”结果，无需再次处理。请选择原文或 dual 附件。
 
 operation-error-no-selection = 请先选择一个条目或 PDF 附件。
+operation-cancel-batch = 取消本批次任务
+operation-close-progress = 关闭窗口（后台继续）
+operation-cancelling = 正在取消，请等待服务端停止任务…
+operation-cancelled = 任务已取消
+operation-cancel-failed = 取消失败：{ $message }
+operation-cancel-unsupported = 服务端未能确认取消。请更新并重启翻译服务后重试；当前任务仍可能继续运行。
+operation-progress-file-cancelled = 已取消：{ $fileName }
+operation-batch-cancelled = 已停止：成功 { $succeeded }，失败 { $failed }，取消 { $cancelled }
+operation-error-no-active-service = 请先在 PDF2zh 设置中激活一个 API 配置，或使用 pdf2zh_next 的 SiliconFlow Free。
 operation-error-unknown = 未知错误
 operation-error-prefix = 错误：{ $message }
 operation-error-single-file = 处理文件 { $fileName } 失败：{ $message }

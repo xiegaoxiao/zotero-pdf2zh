@@ -1,5 +1,6 @@
 import { PDF2zhHelperFactory } from "./pdf2zhHelper";
 import { JobProgressUpdate, ServerConfig } from "./pdf2zhTypes";
+import { BatchCancellation, JobCancelledError } from "./jobCancellation";
 
 export class FileProcessor {
     private static instance: FileProcessor;
@@ -39,10 +40,17 @@ export class FileProcessor {
             endpoint: string;
         }>,
         onProgress?: (update: JobProgressUpdate) => void,
-    ): Promise<{ total: number; succeeded: number; failed: number }> {
+        cancellation?: BatchCancellation,
+    ): Promise<{
+        total: number;
+        succeeded: number;
+        failed: number;
+        cancelled: number;
+    }> {
         this.emit("batchStarted", { totalTasks: tasks.length });
         let succeeded = 0;
         let failed = 0;
+        let cancelled = 0;
         for (let index = 0; index < tasks.length; index++) {
             const task = tasks[index];
             const report = (
@@ -55,9 +63,30 @@ export class FileProcessor {
                 });
             };
             try {
-                await PDF2zhHelperFactory.processSingleFile(task, report);
+                cancellation?.checkpoint();
+                await PDF2zhHelperFactory.processSingleFile(
+                    { ...task, cancellation },
+                    report,
+                );
                 succeeded++;
-            } catch {
+            } catch (error) {
+                if (error instanceof JobCancelledError) {
+                    cancelled = tasks.length - index;
+                    for (
+                        let remaining = index;
+                        remaining < tasks.length;
+                        remaining++
+                    ) {
+                        onProgress?.({
+                            phase: "file-cancelled",
+                            fileName: tasks[remaining].fileName,
+                            endpoint: tasks[remaining].endpoint,
+                            current: remaining + 1,
+                            total: tasks.length,
+                        });
+                    }
+                    break;
+                }
                 failed++;
             }
         }
@@ -65,7 +94,8 @@ export class FileProcessor {
             total: tasks.length,
             succeeded,
             failed,
+            cancelled,
         });
-        return { total: tasks.length, succeeded, failed };
+        return { total: tasks.length, succeeded, failed, cancelled };
     }
 }

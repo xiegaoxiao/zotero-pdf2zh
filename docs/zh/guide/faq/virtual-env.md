@@ -103,7 +103,7 @@ python update_packages.py --env-tool conda
 mkdir zotero-pdf2zh && cd zotero-pdf2zh
 
 # 2. 从最新 Release 下载并解压 server
-curl -L -o server.zip https://github.com/guaguastandup/zotero-pdf2zh/releases/latest/download/server.zip
+curl -L -o server.zip https://github.com/xiegaoxiao/zotero-pdf2zh/releases/latest/download/server.zip
 unzip server.zip
 
 # 3. 进入 server 文件夹

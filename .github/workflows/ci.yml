@@ -22,8 +22,8 @@ jobs:
             - name: Install Server validation deps
               run: |
                   python -m pip install --upgrade pip
-                  python -m pip install toml packaging pymupdf flask pypdf pydantic
-                  python -m pip install --no-deps pdf2zh-next==2.9.0
+                  python -m pip install toml packaging pymupdf flask pypdf pydantic numpy
+                  python -m pip install --no-deps pdf2zh-next==2.9.0 babeldoc==0.6.2
 
             - name: Compile Server sources
               run: python -m compileall -q server
@@ -201,6 +201,7 @@ jobs:
                   python - <<'PY'
                   import json
                   import os
+                  import re
                   import runpy
                   import sys
                   import tempfile
@@ -221,7 +222,7 @@ jobs:
 
                   server = Path('server/server.py').read_text(encoding='utf-8')
                   assert "default='127.0.0.1'" in server
-                  assert 'self.app.run(host=host' in server
+                  assert re.search(r'self\.app\.run\(\s*host=host', server)
                   config_source = Path('server/utils/config.py').read_text(encoding='utf-8')
                   assert 'def _safe_log_value' in config_source
 
@@ -273,9 +274,10 @@ jobs:
                   assert isinstance(notice.get('community'), dict)
                   assert 'qq_answer' not in notice['community']
                   assert any(group.get('status') == 'open' and group.get('id') for group in notice['community'].get('qq_groups', []))
-                  gitee_notice, github_notice = _notice_urls('gitee')
-                  assert gitee_notice.endswith('/raw/main/server/notice.json')
-                  assert github_notice == 'https://raw.githubusercontent.com/guaguastandup/zotero-pdf2zh/main/server/notice.json'
+                  assert _notice_urls('gitee') == ['https://raw.githubusercontent.com/xiegaoxiao/zotero-pdf2zh/main/server/notice.json']
+                  fork_urls = _server_download_urls('xiegaoxiao', 'zotero-pdf2zh', '4.1.8-fork.6', 'gitee')
+                  assert fork_urls[0] == 'https://github.com/xiegaoxiao/zotero-pdf2zh/releases/download/v4.1.8-fork.6/server.zip'
+                  assert all('gitee.com' not in url for url in fork_urls)
                   assert _notice_applies({'enabled': False, 'affects': ['4.1.2']}, '4.1.2') is False
                   assert _notice_applies({'affects': ['4.1.0']}, '4.1.2') is False
                   assert _notice_applies({'affects': ['4.1.0']}, '4.1.0') is True
@@ -304,9 +306,10 @@ jobs:
                       assert '检查依赖完整性和 `pdf2zh_next --help`' not in text
 
                   release = Path('.github/workflows/release.yml').read_text(encoding='utf-8')
-                  assert 'zip -r server.zip server' in release
-                  assert "grep -q 'server/server.py'" in release
-                  assert 'plugin/build/zotero-pdf-2-zh.xpi --clobber' in release
+                  assert 'python automation/build_release.py' in release
+                  assert 'GH_REPO: xiegaoxiao/zotero-pdf2zh' in release
+                  assert 'artifacts/release/zotero-pdf-2-zh.xpi' in release
+                  assert 'artifacts/release/update-beta.json --clobber' in release
                   print('Server security/config/updater invariants OK')
                   PY
 
@@ -376,7 +379,9 @@ jobs:
 
                   assert 'getOperationValidationError' in helper
                   assert 'throw error;' in helper
-                  assert 'removeListener();' in helper
+                  assert 'JobProgressPopup.open(' in helper
+                  assert 'cancellation?.checkpoint();' in helper
+                  assert 'if (error instanceof JobCancelledError) throw error;' in helper
                   assert 'Zotero.File.getValidFileName(leaf)' in helper
                   assert 'renameAttachmentFile(' not in helper
                   assert 'private static currentAttachKeys' not in helper

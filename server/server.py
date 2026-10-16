@@ -34,15 +34,15 @@ from datetime import datetime  # 用于记录任务开始/结束时间
 # 导入自动更新模块
 from utils.auto_update import check_for_updates, fetch_and_show_notices, perform_update_optimized
 # 导入任务管理器（用于 index.html 前端进度显示）
-from utils.task_manager import task_manager
+from utils.task_manager import task_manager, TaskCancelledError
 # 导入带进度解析的命令执行器
-from utils.execute import execute_with_progress
+from utils.execute import execute_with_progress, run_cancellable
 from utils.translation_outputs import require_pdf_outputs, publish_pdf_outputs
 
 _VALUE_ERROR_RE = re.compile(r'(?m)^ValueError:\s*(?P<msg>.+)$')
 
-__version__ = "4.1.7"
-update_log = "远程/Docker 优先 HTTP 挂附件；新旧插件协议兼容；进度条显示翻译百分比；加固附件文件名；补齐额外字段白名单，可从下拉添加 *_enable_json_mode（默认关闭）。请同时更新插件和 Server。"
+__version__ = "4.1.8-fork.6"
+update_log = "智谱 Flash 配置、精简服务入口、通用思考开关、API 连通性测试、可关闭的进度窗口与任务取消，以及 PDF 首字下沉、字重、图表和参考文献修复。请同时更新插件和 Server。"
 
 ############# config file #########
 pdf2zh      = 'pdf2zh'
@@ -135,6 +135,7 @@ class PDFTranslator:
         # 新增：历史记录 API - 供 index.html 前端获取翻译历史
         self.app.add_url_rule('/api/history', 'history', self.get_history)
         self.app.add_url_rule('/api/tasks', 'tasks', self.get_tasks)
+        self.app.add_url_rule('/api/tasks/<task_id>/cancel', 'cancel_task', self.cancel_task, methods=['POST'])
         # 新增：配置信息 API - 供 index.html 前端显示当前服务配置
         self.app.add_url_rule('/api/config', 'config', self.get_config)
         # 新增：favicon 路由
@@ -151,6 +152,7 @@ class PDFTranslator:
             'status': 'ok',
             'version': __version__,
             'message': 'PDF2zh Server is running',
+            'capabilities': ['task_cancellation'],
             'outputDir': os.path.abspath(output_folder),
         }), 200
 
@@ -200,6 +202,15 @@ class PDFTranslator:
 
     def get_tasks(self):
         return jsonify({'status': 'success', 'tasks': task_manager.get_active_tasks_list()})
+
+    def cancel_task(self, task_id):
+        try:
+            status = task_manager.request_cancel(task_id)
+        except Exception:
+            return jsonify({'status': 'error', 'message': '无法停止翻译进程，请重试。'}), 500
+        if status == 'not_found':
+            return jsonify({'status': 'error', 'message': '任务不存在或已清理。'}), 404
+        return jsonify({'status': status, 'taskId': task_id})
 
     ##################################################################
     # 配置信息 API /api/config - 供 index.html 前端显示当前服务配置
@@ -386,7 +397,10 @@ class PDFTranslator:
         if self._client_wants_async_job():
             def run():
                 try:
+                    task_manager.check_cancelled(task_id)
                     worker()
+                except TaskCancelledError:
+                    task_manager.complete_task(task_id, 'cancelled')
                 except Exception as exc:
                     task_manager.complete_task(task_id, 'failed', str(exc), error=str(exc))
                     self._exception_payload(exc, context=context)
@@ -405,11 +419,15 @@ class PDFTranslator:
                     'message': payload.get('message') or '操作失败，请查看详细日志。',
                 }), 500
             return jsonify(payload), 200
+        except TaskCancelledError:
+            task_manager.complete_task(task_id, 'cancelled')
+            return jsonify({'status': 'cancelled', 'taskId': task_id, 'message': '任务已取消'}), 200
         except Exception as exc:
             task_manager.complete_task(task_id, 'failed', str(exc), error=str(exc))
             return self._handle_exception(exc, context=context)
 
     def _complete_job_files(self, task_id, paths, message):
+        task_manager.check_cancelled(task_id)
         payload = self._success_files_payload(paths)
         if not payload['fileList']:
             task_manager.complete_task(task_id, 'failed', '操作失败，请查看详细日志。', error='无文件生成')
@@ -1048,11 +1066,13 @@ class PDFTranslator:
         try:
             # 使用 execute_with_progress 替代原来的 execute_in_env / subprocess.run
             # 实时解析子进程输出中的进度信息并更新 task_manager
-            execute_with_progress(cmd, task_id, args, self.env_manager if args.enable_venv else None)
+            execute_with_progress(cmd, task_id, args, self.env_manager if args.enable_venv else None,
+                                  {'ZOTERO_PDF2ZH_THINKING_MODE': config.thinking_mode})
         except subprocess.CalledProcessError as e:
             print(f"⚠️ 翻译失败, 错误信息: {e}, 尝试跳过字体子集化, 重新渲染\n")
             cmd.append('--skip-subset-fonts')
-            execute_with_progress(cmd, task_id, args, self.env_manager if args.enable_venv else None)
+            execute_with_progress(cmd, task_id, args, self.env_manager if args.enable_venv else None,
+                                  {'ZOTERO_PDF2ZH_THINKING_MODE': config.thinking_mode})
         fileName = os.path.basename(input_path).replace('.pdf', '')
         if config.babeldoc:
             output_path_mono = os.path.join(output_folder, f"{fileName}.{config.targetLang}.mono.pdf")
@@ -1075,6 +1095,7 @@ class PDFTranslator:
         os.makedirs(output_folder, exist_ok=True)
         with tempfile.TemporaryDirectory(prefix='.pdf2zh-next-', dir=output_folder) as job_output:
             paths = self._translate_pdf_next_job(input_path, config, job_output, task_id)
+            task_manager.check_cancelled(task_id)
             published = publish_pdf_outputs(paths, output_folder)
             if config.save_auto_extracted_glossary:
                 from pathlib import Path
@@ -1153,6 +1174,7 @@ class PDFTranslator:
                 output_path.append(watermark_dual)
 
         reference_env = {'ZOTERO_PDF2ZH_TRANSLATE_REFERENCES': '1' if config.translate_references else '0'}
+        reference_env['ZOTERO_PDF2ZH_THINKING_MODE'] = config.thinking_mode
         execution_error = None
         if args.enable_winexe and os.path.exists(args.winexe_path):
             cmd = [f"{args.winexe_path}"] + cmd[1:]  # Windows可执行文件
@@ -1194,6 +1216,7 @@ class PDFTranslator:
                     text=True,
                     bufsize=1,
                 )
+                task_manager.register_process(task_id, process)
 
                 stderr_lines = []
                 if process.stderr:
@@ -1204,6 +1227,8 @@ class PDFTranslator:
                     process.stderr.close()
 
                 return_code = process.wait()
+                task_manager.unregister_process(task_id, process)
+                task_manager.check_cancelled(task_id)
                 if return_code != 0:
                     stderr_text = ''.join(stderr_lines)
                     value_error = self._extract_value_error(stderr_text)
@@ -1216,8 +1241,9 @@ class PDFTranslator:
             else:
                 # 回退模式：静默模式（旧行为）
                 print("🔇 [winexe] mode=silent")
-                r = subprocess.run(
+                r = run_cancellable(
                     cmd,
+                    task_id,
                     shell=False,
                     cwd=exe_dir,
                     creationflags=CREATE_NO_WINDOW,

@@ -3,6 +3,11 @@ import { getString } from "../utils/locale";
 import { version as pluginVersion } from "../../package.json";
 import { FileProcessor } from "./pdf2zhFileProcessor";
 import {
+    BatchCancellation,
+    JobCancelledError,
+    ActiveServerJob,
+} from "./jobCancellation";
+import {
     taskFinishedWithoutFiles,
     validatePDFBytes,
 } from "./pdf2zhAttachmentUtils";
@@ -13,6 +18,11 @@ import {
     JobProgressUpdate,
 } from "./pdf2zhTypes";
 import { loadLLMApisFromPrefs } from "./preferenceScript";
+import {
+    canonicalService,
+    selectedTranslationService,
+    translationServiceChoices,
+} from "./translationServices";
 
 export class PDF2zhHelperFactory {
     // 翻译请求本身不要重试，避免同一篇 PDF 被重复翻译。
@@ -55,6 +65,16 @@ export class PDF2zhHelperFactory {
                     throw new Error(operationError);
                 }
                 const config = this.getServerConfig();
+                if (
+                    endpoint === "translate" &&
+                    !(config.engine === "pdf2zh"
+                        ? config.service
+                        : config.next_service)
+                ) {
+                    throw new Error(
+                        getString("operation-error-no-active-service"),
+                    );
+                }
                 tasks.push({
                     fileName,
                     item,
@@ -77,15 +97,28 @@ export class PDF2zhHelperFactory {
             return;
         }
 
+        const cancellation = new BatchCancellation(
+            (job) => this.cancelServerTask(job),
+            (error) => progress.cancelFailed(error),
+        );
         const progress = JobProgressPopup.open(
             tasks.map((task) => task.fileName),
+            cancellation,
         );
         const fileProcessor = FileProcessor.getInstance();
         try {
-            const result = await fileProcessor.processBatch(tasks, (update) => {
-                progress.updateFile(update);
-            });
-            progress.complete(result.succeeded, result.failed);
+            const result = await fileProcessor.processBatch(
+                tasks,
+                (update) => {
+                    progress.updateFile(update);
+                },
+                cancellation,
+            );
+            progress.complete(
+                result.succeeded,
+                result.failed,
+                result.cancelled,
+            );
         } catch (error) {
             progress.complete(0, tasks.length);
             throw error;
@@ -147,6 +180,11 @@ export class PDF2zhHelperFactory {
                 break;
             case "file-done":
                 text = getString("operation-progress-file-done", {
+                    args: { fileName: update.fileName },
+                });
+                break;
+            case "file-cancelled":
+                text = getString("operation-progress-file-cancelled", {
                     args: { fileName: update.fileName },
                 });
                 break;
@@ -238,28 +276,33 @@ export class PDF2zhHelperFactory {
             item: Zotero.Item; // item
             config: ServerConfig; // serverConfig
             endpoint: string; // 请求类型
+            cancellation?: BatchCancellation;
         },
         onProgress?: (
             update: Omit<JobProgressUpdate, "current" | "total">,
         ) => void,
     ) {
-        const { fileName, item, config, endpoint } = params; // config
+        const { fileName, item, config, endpoint, cancellation } = params; // config
         ztoolkit.log(
             `Processing Single File: ${fileName}, ServerConfig: ${config}`,
         );
         try {
             onProgress?.({ phase: "submitting", fileName, endpoint });
             const fileData = await this.prepareFileData(item);
+            cancellation?.checkpoint();
             const response = await this.sendRequest(
                 fileData,
                 config,
                 endpoint,
                 onProgress,
+                cancellation,
             );
+            cancellation?.checkpoint();
             onProgress?.({ phase: "importing", fileName, endpoint });
             await this.handleResponse(response, item, config);
             onProgress?.({ phase: "file-done", fileName, endpoint });
         } catch (error) {
+            if (error instanceof JobCancelledError) throw error;
             ztoolkit.log(`处理单个文件失败: ${fileName}, 错误: ${error}`);
             const message =
                 error instanceof Error
@@ -300,14 +343,26 @@ export class PDF2zhHelperFactory {
         onProgress?: (
             update: Omit<JobProgressUpdate, "current" | "total">,
         ) => void,
+        cancellation?: BatchCancellation,
     ) {
         return this.retryOperation(async () => {
+            cancellation?.checkpoint();
             // 获取激活的 LLM API 配置
             let llmApiConfig;
             if (config.engine == "pdf2zh") {
                 llmApiConfig = this.getActiveLLMApiConfig(config.service);
             } else {
                 llmApiConfig = this.getActiveLLMApiConfig(config.next_service);
+            }
+            if (
+                endpoint === "translate" &&
+                !llmApiConfig &&
+                !(
+                    config.engine === "pdf2zh_next" &&
+                    config.next_service === "siliconflowfree"
+                )
+            ) {
+                throw new Error(getString("operation-error-no-active-service"));
             }
 
             const requestBody: any = {
@@ -367,6 +422,7 @@ export class PDF2zhHelperFactory {
                 throw new Error(result.message || "服务器返回错误");
             }
             const taskId = this.taskIdFromPayload(result);
+            if (result.status === "cancelled") throw new JobCancelledError();
             if (
                 result.status === "accepted" ||
                 (taskId && result.status !== "success")
@@ -379,18 +435,56 @@ export class PDF2zhHelperFactory {
                     fileName: fileData.fileName,
                     endpoint,
                 });
-                return this.waitForAcceptedTask(config, taskId, (running) => {
-                    onProgress?.({
-                        phase: "running",
-                        fileName: fileData.fileName,
-                        endpoint,
-                        percent: running.percent,
-                        detail: running.message,
-                    });
+                await cancellation?.bindJob({
+                    serverUrl: config.serverUrl,
+                    taskId,
                 });
+                try {
+                    return await this.waitForAcceptedTask(
+                        config,
+                        taskId,
+                        (running) => {
+                            onProgress?.({
+                                phase: "running",
+                                fileName: fileData.fileName,
+                                endpoint,
+                                percent: running.percent,
+                                detail: running.message,
+                            });
+                        },
+                    );
+                } finally {
+                    cancellation?.clearJob();
+                }
             }
             return result;
         });
+    }
+
+    static async cancelServerTask(job: ActiveServerJob): Promise<void> {
+        const response = await fetch(
+            `${job.serverUrl.replace(/\/+$/, "")}/api/tasks/${encodeURIComponent(job.taskId)}/cancel`,
+            {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: "{}",
+                cache: "no-store",
+            },
+        );
+        let payload: any;
+        try {
+            payload = await response.json();
+        } catch {
+            payload = null;
+        }
+        if (
+            !response.ok ||
+            !["cancelling", "cancelled", "finished"].includes(payload?.status)
+        ) {
+            throw new Error(
+                payload?.message || getString("operation-cancel-unsupported"),
+            );
+        }
     }
 
     static parseServerPayload(text: string): {
@@ -449,6 +543,15 @@ export class PDF2zhHelperFactory {
                 ? (task.result as Record<string, unknown>)
                 : null;
         const status = String(task.status || nested?.status || "");
+        if (
+            task.cancelled === true ||
+            ["cancelled", "已取消"].includes(status)
+        ) {
+            return {
+                status: "cancelled",
+                message: getString("operation-cancelled"),
+            };
+        }
         const failed =
             status === "失败" ||
             status === "failed" ||
@@ -559,6 +662,8 @@ export class PDF2zhHelperFactory {
             const task = await this.fetchTaskRecord(config, taskId);
             const payload = this.completedTaskPayload(task, taskId);
             if (payload) {
+                if (payload.status === "cancelled")
+                    throw new JobCancelledError();
                 if (payload.status === "error") {
                     throw new Error(payload.message || "翻译失败");
                 }
@@ -1017,11 +1122,19 @@ export class PDF2zhHelperFactory {
 
     // ************* Config *************
     static getServerConfig(): ServerConfig {
+        loadLLMApisFromPrefs();
+        const apis = Array.from(addon.data.llmApis?.map.values() || []);
         return {
             serverUrl: getPref("new_serverip")?.toString() || "",
 
-            service: getPref("service")?.toString() || "",
-            next_service: getPref("next_service")?.toString() || "",
+            service: selectedTranslationService(
+                translationServiceChoices("pdf2zh", apis),
+                getPref("service")?.toString() || "",
+            ),
+            next_service: selectedTranslationService(
+                translationServiceChoices("pdf2zh_next", apis),
+                getPref("next_service")?.toString() || "",
+            ),
             engine: getPref("engine")?.toString() || "",
 
             sourceLang: getPref("sourceLang")?.toString() || "",
@@ -1031,6 +1144,7 @@ export class PDF2zhHelperFactory {
             threadNum: getPref("threadNum")?.toString() || "",
             qps: getPref("qps")?.toString() || "10",
             poolSize: getPref("poolSize")?.toString() || "0",
+            enableThinking: getPref("enableThinking")?.toString() || "false",
 
             // generate
             mono: getPref("mono")?.toString() || "",
@@ -1055,7 +1169,8 @@ export class PDF2zhHelperFactory {
             noWatermark: getPref("noWatermark")?.toString() || "",
             saveGlossary: getPref("saveGlossary")?.toString() || "",
             disableGlossary: getPref("disableGlossary")?.toString() || "",
-            translateReferences: getPref("translateReferences")?.toString() || "false",
+            translateReferences:
+                getPref("translateReferences")?.toString() || "false",
             noDual: getPref("noDual")?.toString() || "",
             noMono: getPref("noMono")?.toString() || "",
             skipClean: getPref("skipClean")?.toString() || "",
@@ -1077,7 +1192,10 @@ export class PDF2zhHelperFactory {
         }
         // 查找激活的配置
         for (const [key, llmApi] of addon.data.llmApis.map) {
-            if (llmApi.activate && llmApi.service == service) {
+            if (
+                llmApi.activate &&
+                canonicalService(llmApi.service) === canonicalService(service)
+            ) {
                 return {
                     service: llmApi.service,
                     model: llmApi.model,
@@ -1114,6 +1232,7 @@ export class PDF2zhHelperFactory {
             try {
                 return await operation();
             } catch (error) {
+                if (error instanceof JobCancelledError) throw error;
                 lastError =
                     error instanceof Error ? error : new Error(String(error));
                 if (attempt === maxRetries) {
@@ -1152,223 +1271,207 @@ export class PDF2zhHelperFactory {
     }
 }
 
-class JobProgressPopup {
-    private static shared: {
-        window: any;
-        lineCount: number;
-        batches: number;
-        closeToken: number;
-    } | null = null;
-
-    private window: any;
-    private summaryIdx: number;
-    private fileIdx: number[];
-    private total: number;
-    private done = 0;
-    private finishedFiles = new Set<number>();
-    private enabled: boolean;
+export class JobProgressPopup {
+    private dialog: any;
+    private dismissed = false;
+    private finished = false;
+    private importing = false;
+    private summary: string;
+    private notice = "";
+    private rows: string[];
+    private percent = 0;
+    private done = new Set<number>();
 
     static shouldShow(): boolean {
         const raw = getPref("showProgress");
-        if (raw === undefined || raw === null || raw === "") {
-            return true;
-        }
-        return PDF2zhHelperFactory.isTrue(raw);
+        return (
+            raw === undefined ||
+            raw === null ||
+            raw === "" ||
+            PDF2zhHelperFactory.isTrue(raw)
+        );
     }
 
-    static open(fileNames: string[]): JobProgressPopup {
-        return new JobProgressPopup(fileNames);
+    static open(
+        fileNames: string[],
+        cancellation: BatchCancellation,
+    ): JobProgressPopup {
+        return new JobProgressPopup(fileNames, cancellation);
     }
 
-    private constructor(fileNames: string[]) {
-        this.enabled = JobProgressPopup.shouldShow();
-        this.total = fileNames.length;
-        this.fileIdx = [];
-        this.summaryIdx = 0;
-        if (!this.enabled) {
-            this.window = null;
-            return;
-        }
-        const firstOpen = !JobProgressPopup.shared?.window;
-        const shared = JobProgressPopup.ensureWindow();
-        this.window = shared.window;
-        shared.batches += 1;
-        shared.closeToken += 1;
-        this.summaryIdx = shared.lineCount;
-        this.createLine({
-            text: getString("operation-batch-started", {
-                args: { count: this.total },
-            }),
-            type: "default",
-            progress: 0,
-        });
-        this.fileIdx = fileNames.map((fileName) => {
-            const idx = shared.lineCount;
-            this.createLine({
-                text: getString("operation-progress-waiting", {
-                    args: { fileName },
-                }),
-                type: "default",
-                progress: 0,
-            });
-            return idx;
-        });
-        if (firstOpen) {
-            try {
-                this.window.show();
-            } catch (error) {
-                ztoolkit.log("显示进度窗口失败:", error);
-            }
-        }
-    }
-
-    private static ensureWindow() {
-        if (!JobProgressPopup.shared?.window) {
-            const window = new ztoolkit.ProgressWindow(
-                getString("operation-progress-title"),
-                {
-                    closeOnClick: false,
-                    closeTime: -1,
-                    closeOtherProgressWindows: false,
-                },
-            );
-            JobProgressPopup.shared = {
-                window,
-                lineCount: 0,
-                batches: 0,
-                closeToken: 0,
-            };
-        }
-        return JobProgressPopup.shared;
-    }
-
-    private createLine(line: { text: string; type: string; progress: number }) {
-        if (!this.window || !JobProgressPopup.shared) {
-            return;
-        }
-        this.window.createLine(line);
-        JobProgressPopup.shared.lineCount += 1;
-    }
-
-    private changeLine(
-        idx: number,
-        line: { text: string; type: string; progress: number },
+    private constructor(
+        private fileNames: string[],
+        private cancellation: BatchCancellation,
     ) {
-        if (!this.window) {
+        this.summary = getString("operation-batch-started", {
+            args: { count: fileNames.length },
+        });
+        this.rows = fileNames.map((fileName) =>
+            getString("operation-progress-waiting", { args: { fileName } }),
+        );
+        if (!JobProgressPopup.shouldShow()) return;
+        this.dialog = new ztoolkit.Dialog(1, 1)
+            .addCell(0, 0, {
+                tag: "div",
+                namespace: "html",
+                id: "pdf2zh-job-progress-body",
+                styles: {
+                    padding: "12px",
+                    overflowY: "auto",
+                    width: "100%",
+                    boxSizing: "border-box",
+                },
+            })
+            .addButton(
+                getString("operation-cancel-batch"),
+                "pdf2zh-job-cancel",
+                {
+                    noClose: true,
+                    callback: async () => {
+                        if (
+                            this.finished ||
+                            this.importing ||
+                            this.cancellation.requested
+                        )
+                            return;
+                        this.notice = getString("operation-cancelling");
+                        const pending = this.cancellation.request();
+                        this.render();
+                        await pending;
+                        this.render();
+                    },
+                },
+            )
+            .addButton(
+                getString("operation-close-progress"),
+                "pdf2zh-job-close",
+                {
+                    callback: () => {
+                        this.dismissed = true;
+                    },
+                },
+            )
+            .setDialogData({
+                loadCallback: () => this.render(),
+                unloadCallback: () => {
+                    this.dismissed = true;
+                },
+            })
+            .open(getString("operation-progress-title"), {
+                width: 520,
+                height: 300,
+                fitContent: false,
+                resizable: true,
+                centerscreen: false,
+                alwaysRaised: false,
+            });
+    }
+
+    private render() {
+        if (this.dismissed || !this.dialog?.window || this.dialog.window.closed)
             return;
+        const doc = this.dialog.window.document;
+        const body = doc.getElementById("pdf2zh-job-progress-body");
+        if (!body) return;
+        body.replaceChildren();
+        const summary = doc.createElementNS(
+            "http://www.w3.org/1999/xhtml",
+            "p",
+        );
+        summary.textContent = this.summary;
+        summary.style.fontWeight = "600";
+        body.appendChild(summary);
+        const progress = doc.createElementNS(
+            "http://www.w3.org/1999/xhtml",
+            "progress",
+        );
+        progress.max = 100;
+        progress.value = this.percent;
+        progress.style.width = "100%";
+        body.appendChild(progress);
+        if (this.notice) {
+            const notice = doc.createElementNS(
+                "http://www.w3.org/1999/xhtml",
+                "p",
+            );
+            notice.textContent = this.notice;
+            body.appendChild(notice);
         }
-        try {
-            this.window.changeLine({ idx, ...line });
-            this.window.show();
-        } catch (error) {
-            ztoolkit.log("更新进度窗口失败:", error);
+        for (const text of this.rows) {
+            const row = doc.createElementNS(
+                "http://www.w3.org/1999/xhtml",
+                "p",
+            );
+            row.textContent = text;
+            row.style.cssText =
+                "font-size:12px;line-height:1.5;overflow-wrap:anywhere";
+            body.appendChild(row);
         }
+        const button = doc.getElementById("pdf2zh-job-cancel");
+        if (button)
+            button.disabled =
+                this.finished || this.importing || this.cancellation.requested;
+    }
+
+    cancelFailed(error: unknown) {
+        const message = error instanceof Error ? error.message : String(error);
+        this.notice = getString("operation-cancel-failed", {
+            args: { message },
+        });
+        this.render();
     }
 
     updateFile(update: JobProgressUpdate) {
-        if (!this.enabled) {
-            return;
-        }
-        const idx = this.fileIdx[update.current - 1];
-        if (idx === undefined) {
-            return;
-        }
-        const fileProgress = PDF2zhHelperFactory.jobProgressPercent({
-            ...update,
-            current: 1,
-            total: 1,
-        });
-        this.changeLine(idx, {
-            text: PDF2zhHelperFactory.formatJobProgressText(update),
-            type:
-                update.phase === "file-failed"
-                    ? "error"
-                    : update.phase === "file-done"
-                      ? "success"
-                      : "default",
-            progress: fileProgress,
-        });
-        if (update.phase === "file-done" || update.phase === "file-failed") {
-            if (!this.finishedFiles.has(update.current)) {
-                this.finishedFiles.add(update.current);
-                this.done = Math.min(this.total, this.done + 1);
-            }
-        }
-        const overall = Math.min(
+        this.importing = update.phase === "importing";
+        this.rows[update.current - 1] =
+            PDF2zhHelperFactory.formatJobProgressText(update);
+        if (
+            ["file-done", "file-failed", "file-cancelled"].includes(
+                update.phase,
+            )
+        )
+            this.done.add(update.current);
+        const fraction = this.done.has(update.current)
+            ? 0
+            : PDF2zhHelperFactory.jobProgressPercent({
+                  ...update,
+                  current: 1,
+                  total: 1,
+              }) / 100;
+        this.percent = Math.min(
             99,
             Math.round(
-                ((this.done +
-                    (this.finishedFiles.has(update.current)
-                        ? 0
-                        : fileProgress / 100)) /
-                    this.total) *
-                    100,
+                ((this.done.size + fraction) / this.fileNames.length) * 100,
             ),
         );
-        const percentText =
-            update.phase === "running" &&
-            typeof update.percent === "number" &&
-            update.percent > 0
-                ? ` · ${Math.round(update.percent)}%`
-                : "";
-        this.changeLine(this.summaryIdx, {
-            text:
-                getString("operation-progress-summary", {
-                    args: { done: this.done, total: this.total },
-                }) + percentText,
-            type: "default",
-            progress: overall,
-        });
+        this.summary =
+            getString("operation-progress-summary", {
+                args: { done: this.done.size, total: this.fileNames.length },
+            }) + (update.percent ? ` · ${Math.round(update.percent)}%` : "");
+        this.render();
     }
 
-    complete(succeeded: number, failed: number) {
-        if (!this.enabled) {
-            return;
-        }
-        this.changeLine(this.summaryIdx, {
-            text: getString("operation-batch-completed", {
-                args: {
-                    succeeded,
-                    failed,
-                    kind:
-                        failed > 0 && succeeded === 0
-                            ? "failed"
-                            : failed > 0
-                              ? "mixed"
-                              : "success",
-                },
-            }),
-            type:
-                failed > 0 && succeeded === 0
-                    ? "error"
-                    : failed > 0
-                      ? "default"
-                      : "success",
-            progress: 100,
-        });
-        const shared = JobProgressPopup.shared;
-        if (!shared) {
-            return;
-        }
-        shared.batches = Math.max(0, shared.batches - 1);
-        if (shared.batches > 0) {
-            return;
-        }
-        const token = ++shared.closeToken;
-        Zotero.Promise.delay(8000).then(() => {
-            if (
-                !JobProgressPopup.shared ||
-                JobProgressPopup.shared.closeToken !== token ||
-                JobProgressPopup.shared.batches > 0
-            ) {
-                return;
-            }
-            try {
-                JobProgressPopup.shared.window?.close();
-            } catch (error) {
-                ztoolkit.log("关闭进度窗口失败:", error);
-            }
-            JobProgressPopup.shared = null;
-        });
+    complete(succeeded: number, failed: number, cancelled = 0) {
+        this.finished = true;
+        this.percent = 100;
+        this.summary =
+            cancelled > 0
+                ? getString("operation-batch-cancelled", {
+                      args: { succeeded, failed, cancelled },
+                  })
+                : getString("operation-batch-completed", {
+                      args: {
+                          succeeded,
+                          failed,
+                          kind:
+                              failed > 0 && succeeded === 0
+                                  ? "failed"
+                                  : failed > 0
+                                    ? "mixed"
+                                    : "success",
+                      },
+                  });
+        this.notice = "";
+        this.render();
     }
 }

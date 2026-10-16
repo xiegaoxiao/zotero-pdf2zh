@@ -1,5 +1,5 @@
 /* eslint-disable no-restricted-globals */
-/* global Zotero, DEFAULT_SERVICES, bindInputSelectValue, currentData, document, fetch, findExtraFieldRow, mergedServices, navigator, updateDeepSeekReasoningEffortState, updateModelOptions */
+/* global AbortController, URL, setTimeout, clearTimeout, Zotero, DEFAULT_SERVICES, bindInputSelectValue, currentData, document, fetch, findExtraFieldRow, mergedServices, navigator, normalizeZhipuBaseUrl, updateDeepSeekReasoningEffortState, updateModelOptions */
 
 (() => {
     "use strict";
@@ -17,6 +17,24 @@
             noModels: "接口返回成功，但没有识别到模型列表",
             baseUrlRequired: "请先填写 Base URL",
             apiKeyRequired: "该服务获取模型列表需要 API Key",
+            testConnection: "测试连通性",
+            testingConnection: "正在测试 API 连通性…",
+            testKeyRequired: "请先填写 API Key",
+            modelRequired: "请先选择或填写模型名称",
+            invalidBaseUrl: "Base URL 必须是 http:// 或 https:// 地址",
+            testUnsupported:
+                "此旧服务不使用 Chat Completions 接口，请使用 Chat Compatible 配置测试",
+            connected: (model, seconds, reply) =>
+                `连接成功 · ${model} · ${seconds} 秒\n返回：${reply}`,
+            connectionFailed: (message) => `连接失败：${message}`,
+            emptyReply: "接口未返回有效的对话正文，请检查模型与响应格式",
+            timeout: "请求超时（30 秒），请稍后重试",
+            networkError: "无法连接到 API，请检查地址、网络或代理设置",
+            unauthorized: "鉴权失败，请检查 API Key",
+            forbidden: "没有访问权限，请检查模型权限或账户状态",
+            notFound: "接口或模型不存在，请检查 Base URL 与模型名称",
+            rateLimited: "请求受限，请检查服务负载或账户额度",
+            serverError: "API 服务暂时不可用，请稍后重试",
             failed: (message) => `获取失败：${message}`,
             legacyChat:
                 "旧 deepseek-chat 已迁移为 deepseek-v4-flash（思考关闭）",
@@ -38,6 +56,29 @@
             baseUrlRequired: "Enter a Base URL first",
             apiKeyRequired:
                 "An API Key is required to fetch models for this service",
+            testConnection: "Test Connection",
+            testingConnection: "Testing API connection…",
+            testKeyRequired: "Enter an API Key first",
+            modelRequired: "Select or enter a model first",
+            invalidBaseUrl: "Base URL must start with http:// or https://",
+            testUnsupported:
+                "This legacy service does not use Chat Completions. Test it using a Chat Compatible configuration.",
+            connected: (model, seconds, reply) =>
+                `Connected · ${model} · ${seconds}s\nReply: ${reply}`,
+            connectionFailed: (message) => `Connection failed: ${message}`,
+            emptyReply:
+                "The API returned no valid chat content. Check the model and response format.",
+            timeout: "Request timed out after 30 seconds. Try again later.",
+            networkError:
+                "Cannot connect to the API. Check the URL, network, or proxy.",
+            unauthorized: "Authentication failed. Check the API Key.",
+            forbidden:
+                "Access denied. Check model permissions or account status.",
+            notFound:
+                "Endpoint or model not found. Check the Base URL and model.",
+            rateLimited:
+                "Request limited. Check service load or account quota.",
+            serverError: "The API is temporarily unavailable. Try again later.",
             failed: (message) => `Fetch failed: ${message}`,
             legacyChat:
                 "Legacy deepseek-chat migrated to deepseek-v4-flash (thinking disabled)",
@@ -74,6 +115,17 @@
         const serviceConfig = DEFAULT_SERVICES[service] || {};
         const defaultBase = serviceConfig.urls?.[0] || "";
         const base = normalizeBaseUrl(baseUrl || defaultBase);
+
+        if (service === "zhipu") {
+            if (!apiKey) throw new Error(text("apiKeyRequired"));
+            const zhipuBase = normalizeZhipuBaseUrl(base);
+            return {
+                url: zhipuBase.endsWith("/models")
+                    ? zhipuBase
+                    : `${zhipuBase}/models`,
+                headers: { Authorization: `Bearer ${apiKey}` },
+            };
+        }
 
         if (service === "deepseek") {
             if (!apiKey) throw new Error(text("apiKeyRequired"));
@@ -113,26 +165,261 @@
         };
     }
 
-    async function requestJson(url, headers) {
-        if (Zotero?.HTTP?.request) {
-            const xhr = await Zotero.HTTP.request("GET", url, {
+    function responseError(status, payload) {
+        const detail = payload?.error;
+        const message = typeof detail === "string" ? detail : detail?.message;
+        const code = detail?.code;
+        const kind = {
+            401: "unauthorized",
+            403: "forbidden",
+            404: "notFound",
+            429: "rateLimited",
+        }[status];
+        const hint = kind
+            ? text(kind)
+            : status >= 500
+              ? text("serverError")
+              : "";
+        return new Error(
+            [
+                status ? `HTTP ${status}` : "",
+                code ? `[${code}]` : "",
+                message || hint,
+            ]
+                .filter(Boolean)
+                .join(" "),
+        );
+    }
+
+    async function requestJson(
+        url,
+        headers,
+        method = "GET",
+        body = null,
+        timeout = 20000,
+    ) {
+        // Match the session header used by the translation runtime. Match the
+        // hostname exactly so unrelated gateways do not receive routing hints.
+        if (new URL(url).hostname === "opencode.ai") {
+            headers = { ...headers, "x-opencode-session": "zotero-pdf2zh" };
+        }
+        if (typeof Zotero !== "undefined" && Zotero.HTTP?.request) {
+            const xhr = await Zotero.HTTP.request(method, url, {
                 headers,
+                ...(body ? { body: JSON.stringify(body) } : {}),
                 responseType: "json",
-                timeout: 20000,
+                timeout,
+                successCodes: false,
             });
+            let payload = xhr.response;
+            if (!payload || typeof payload !== "object") {
+                let raw = payload || "";
+                // Native XHR forbids responseText when responseType is json.
+                try {
+                    raw = xhr.responseText || raw;
+                } catch {
+                    /* No text fallback. */
+                }
+                try {
+                    payload = JSON.parse(raw);
+                } catch {
+                    payload = null;
+                }
+            }
             if (xhr.status < 200 || xhr.status >= 300) {
-                throw new Error(`HTTP ${xhr.status}`);
+                throw responseError(xhr.status, payload);
             }
-            if (xhr.response && typeof xhr.response === "object") {
-                return xhr.response;
-            }
-            const raw = xhr.responseText || xhr.response || "";
-            return typeof raw === "string" ? JSON.parse(raw) : raw;
+            if (payload?.error) throw responseError(xhr.status, payload);
+            return payload;
         }
 
-        const response = await fetch(url, { method: "GET", headers });
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        return await response.json();
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), timeout);
+        try {
+            const response = await fetch(url, {
+                method,
+                headers,
+                ...(body ? { body: JSON.stringify(body) } : {}),
+                signal: controller.signal,
+            });
+            let payload;
+            try {
+                payload = await response.json();
+            } catch {
+                payload = null;
+            }
+            if (!response.ok || payload?.error)
+                throw responseError(response.status, payload);
+            return payload;
+        } finally {
+            clearTimeout(timer);
+        }
+    }
+
+    function connectionRequestSpec(service, baseUrl, apiKey, model) {
+        if (
+            ![
+                "zhipu",
+                "deepseek",
+                "openailiked",
+                "openaicompatible",
+                "openai",
+            ].includes(service)
+        ) {
+            throw new Error(text("testUnsupported"));
+        }
+        if (!model) throw new Error(text("modelRequired"));
+        if (["zhipu", "deepseek", "openai"].includes(service) && !apiKey) {
+            throw new Error(text("testKeyRequired"));
+        }
+        let base = normalizeBaseUrl(baseUrl);
+        if (service === "zhipu") base = normalizeZhipuBaseUrl(base);
+        if (!base) throw new Error(text("baseUrlRequired"));
+        if (!/^https?:\/\//i.test(base))
+            throw new Error(text("invalidBaseUrl"));
+        const body = {
+            model,
+            messages: [{ role: "user", content: "Reply with exactly: OK" }],
+            max_tokens: 64,
+            stream: false,
+        };
+        // Keep this tiny probe non-thinking, independent of translation settings.
+        const host = new URL(base).hostname;
+        const name = model.toLowerCase().split("/").pop();
+        const hybrid =
+            /^(glm-4\.[567]|deepseek-v4|deepseek-v3\.[12]|qwen3|qwen-plus|qwen-flash)/.test(
+                name,
+            ) && !name.includes("-thinking");
+        if (hybrid) {
+            if (
+                host.endsWith(".aliyuncs.com") ||
+                ["api.siliconflow.cn", "api.siliconflow.com"].includes(host)
+            ) {
+                body.enable_thinking = false;
+            } else if (/^(glm-|deepseek-)/.test(name)) {
+                body.thinking = { type: "disabled" };
+            } else if (["localhost", "127.0.0.1", "[::1]"].includes(host)) {
+                body.chat_template_kwargs = { enable_thinking: false };
+            }
+        }
+        if (/^(gpt-5|o[1-9])/.test(name)) {
+            delete body.max_tokens;
+            body.max_completion_tokens = 64;
+        }
+        return {
+            url: base.endsWith("/chat/completions")
+                ? base
+                : `${base}/chat/completions`,
+            headers: {
+                "Content-Type": "application/json",
+                ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
+            },
+            body,
+        };
+    }
+
+    function connectionErrorMessage(error, apiKey) {
+        const raw = error?.message || String(error || "");
+        const name = error?.name || "";
+        let message = /timeout|timed out|abort/i.test(`${name} ${raw}`)
+            ? text("timeout")
+            : /network|failed to fetch|status.*0\b/i.test(`${name} ${raw}`)
+              ? text("networkError")
+              : raw || text("networkError");
+        if (apiKey) message = message.split(apiKey).join("********");
+        return message.slice(0, 800);
+    }
+
+    function installConnectionTestControls() {
+        const controls = document.querySelector(".model-list-actions");
+        const status = document.getElementById("api-test-status");
+        if (!controls || !status || document.getElementById("test-api-btn"))
+            return;
+        const button = document.createElement("button");
+        button.type = "button";
+        button.id = "test-api-btn";
+        button.className = "btn btn-secondary btn-compact";
+        button.textContent = text("testConnection");
+        controls.insertBefore(button, controls.firstChild);
+        let generation = 0;
+        const formValues = () =>
+            ["service", "apiUrl", "apiKey", "model"].map((id) =>
+                document.getElementById(id).value.trim(),
+            );
+        for (const id of [
+            "service",
+            "serviceselect",
+            "apiUrl",
+            "apiUrlSelect",
+            "apiKey",
+            "apiKeySelect",
+            "model",
+            "modelselect",
+        ]) {
+            for (const event of ["input", "change"]) {
+                document.getElementById(id).addEventListener(event, () => {
+                    generation++;
+                    status.textContent = "";
+                    status.title = "";
+                });
+            }
+        }
+        button.addEventListener("click", async () => {
+            if (button.disabled) return;
+            const values = formValues();
+            const [service, base, apiKey, model] = values;
+            const current = ++generation;
+            const unchanged = () =>
+                current === generation &&
+                JSON.stringify(values) === JSON.stringify(formValues());
+            const started = Date.now();
+            button.disabled = true;
+            status.classList.remove("error");
+            status.classList.remove("success");
+            status.textContent = text("testingConnection");
+            try {
+                const spec = connectionRequestSpec(
+                    service,
+                    base,
+                    apiKey,
+                    model,
+                );
+                const payload = await requestJson(
+                    spec.url,
+                    spec.headers,
+                    "POST",
+                    spec.body,
+                    30000,
+                );
+                const content = payload?.choices?.[0]?.message?.content;
+                if (typeof content !== "string" || !content.trim())
+                    throw new Error(text("emptyReply"));
+                if (!unchanged()) return;
+                const reply = (
+                    apiKey ? content.split(apiKey).join("********") : content
+                )
+                    .trim()
+                    .slice(0, 120);
+                status.textContent = text(
+                    "connected",
+                    model,
+                    ((Date.now() - started) / 1000).toFixed(2),
+                    reply,
+                );
+                status.title = status.textContent;
+                status.classList.add("success");
+            } catch (error) {
+                if (!unchanged()) return;
+                status.textContent = text(
+                    "connectionFailed",
+                    connectionErrorMessage(error, apiKey),
+                );
+                status.title = status.textContent;
+                status.classList.add("error");
+            } finally {
+                button.disabled = false;
+            }
+        });
     }
 
     function extractModelIds(payload) {
@@ -195,6 +482,8 @@
         style.textContent = `
             .model-list-actions {
                 display: flex;
+                flex: 1;
+                flex-wrap: wrap;
                 align-items: center;
                 gap: 8px;
                 min-width: 0;
@@ -206,10 +495,9 @@
                 white-space: nowrap;
             }
             .model-fetch-status {
-                max-width: 260px;
-                overflow: hidden;
-                text-overflow: ellipsis;
-                white-space: nowrap;
+                max-width: 320px;
+                white-space: normal;
+                overflow-wrap: anywhere;
                 color: #666;
                 font-size: 12px;
             }
@@ -253,12 +541,12 @@
                 ];
                 updateModelOptions(service);
                 status.textContent = text("fetched", models.length);
-                status.title = "";
+                status.title = status.textContent;
             } catch (error) {
                 const message =
                     error?.message || String(error || "Unknown error");
                 status.textContent = text("failed", message);
-                status.title = text("unsupported");
+                status.title = `${status.textContent}\n${text("unsupported")}`;
                 status.classList.add("error");
             } finally {
                 button.disabled = false;
@@ -333,6 +621,7 @@
 
     document.addEventListener("DOMContentLoaded", () => {
         installModelFetchControls();
+        installConnectionTestControls();
         migrateLegacyDeepSeekModel();
         localizeDeepSeekSelectLabels();
     });

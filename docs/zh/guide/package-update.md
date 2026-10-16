@@ -181,7 +181,7 @@ Gitee Release 附件可能弹出安全验证或返回 404，因此还会尝试 G
 手动下载：
 
 ```text
-https://github.com/guaguastandup/zotero-pdf2zh/releases/latest/download/server.zip
+https://github.com/xiegaoxiao/zotero-pdf2zh/releases/latest/download/server.zip
 https://gitee.com/guaguastandup/zotero-pdf2zh/raw/v4.1.1/server.zip
 ```
 

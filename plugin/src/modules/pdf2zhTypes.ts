@@ -15,6 +15,7 @@ export interface ServerConfig {
     threadNum: string;
     qps: string;
     poolSize: string;
+    enableThinking: string;
     engine: string;
     service: string;
     next_service: string;
@@ -65,6 +66,7 @@ export type JobProgressPhase =
     | "running"
     | "importing"
     | "file-done"
+    | "file-cancelled"
     | "file-failed";
 
 export interface JobProgressUpdate {

@@ -6,6 +6,8 @@ pref-config-basic    = PDF2zh Translation Config
 pref-serverip        = Python Server IP Address
 pref-engine          = Translation Engine
 pref-service         = Translation Service
+pref-enableThinking  = Enable thinking
+pref-thinking-recommendation = Off by default (recommended)
 pref-threadNum       = Translation Threads Num
 pref-qps             = Max QPS (Requests Per Second)
 pref-poolSize        = Max Concurrent Workers (0 = follow QPS)

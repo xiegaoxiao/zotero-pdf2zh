@@ -1,3 +1,5 @@
+import { canonicalService } from "./translationServices";
+
 export interface LLMServiceConfig {
     name: string;
     models?: string[];
@@ -30,6 +32,9 @@ class LLMApiManager {
     constructor() {
         this.data = new Map<string, LLMApiData>();
     }
+    public clear(): void {
+        this.data.clear();
+    }
     public updateLLMApi(llmApi: LLMApiData): string {
         let key = llmApi.key;
         if (!key) {
@@ -51,7 +56,8 @@ class LLMApiManager {
         this.data.forEach((llmApi, key) => {
             if (
                 key !== excludeKey &&
-                llmApi.service === service &&
+                canonicalService(llmApi.service) ===
+                    canonicalService(service) &&
                 llmApi.activate
             ) {
                 llmApi.activate = false;
@@ -95,7 +101,11 @@ class LLMApiManager {
 
     public getActiveLLMApiByService(service: string): LLMApiData | undefined {
         for (const llmApi of this.data.values()) {
-            if (llmApi.service === service && llmApi.activate) {
+            if (
+                canonicalService(llmApi.service) ===
+                    canonicalService(service) &&
+                llmApi.activate
+            ) {
                 return llmApi;
             }
         }

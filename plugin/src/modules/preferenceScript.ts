@@ -7,6 +7,11 @@ import {
     formatExtraDataForDisplay,
 } from "./llmApiManager";
 import axios from "axios";
+import {
+    canonicalService,
+    selectedTranslationService,
+    translationServiceChoices,
+} from "./translationServices";
 
 const PREF_UI_TEXT = {
     zh: {
@@ -17,6 +22,7 @@ const PREF_UI_TEXT = {
         colApiKey: "API Key",
         colActivate: "激活",
         colExtraData: "额外参数",
+        noActiveService: "请先激活下方的 API 配置",
         serverAddressRequired: "请先设置 Server IP 地址",
         connectionTitle: "Server 连接检查",
         checking: "正在检查 Server 连接...",
@@ -55,6 +61,7 @@ const PREF_UI_TEXT = {
         colApiKey: "API Key",
         colActivate: "Active",
         colExtraData: "Extra Parameters",
+        noActiveService: "Activate an API configuration below first",
         serverAddressRequired: "Set the Server IP address first.",
         connectionTitle: "Server Connection Check",
         checking: "Checking Server connection...",
@@ -165,6 +172,15 @@ function bindPrefEvents() {
                 handleEngineChange(value);
             }
         });
+
+    for (const key of ["service", "next_service"] as const) {
+        doc
+            .getElementById(`zotero-prefpane-${config.addonRef}-${key}Select`)
+            ?.addEventListener("change", (event) => {
+                setPref(key, (event.target as HTMLSelectElement).value);
+                refreshTranslationServiceOptions();
+            });
+    }
 
     // ********************* pdf1.x字体 *********************
     doc
@@ -414,11 +430,11 @@ async function openLLMApiEditDialog(key?: string) {
     }
 
     const dialogData = {
-        service: llmApi.service || "openai",
+        service: llmApi.service || "zhipu",
         model: llmApi.model || "",
         apiKey: llmApi.apiKey || "",
         apiUrl: llmApi.apiUrl || "",
-        activate: llmApi.activate || false,
+        activate: key ? llmApi.activate : true,
         extraData: llmApi.extraData || {},
     };
 
@@ -546,6 +562,10 @@ function migrateLegacyDeepSeekConfig(llmApi: LLMApiData): boolean {
 
 // 从偏好设置加载 LLM APIs
 export function loadLLMApisFromPrefs() {
+    // The manager and the table must represent the same saved configuration.
+    addon.data.llmApis?.map.clear();
+    llmApiManager.clear();
+    updateCachedLLMApiKeys();
     const llmApisJson = getPref("llmApis");
     if (!llmApisJson || typeof llmApisJson !== "string") {
         ztoolkit.log("No valid data found in prefs");
@@ -556,7 +576,6 @@ export function loadLLMApisFromPrefs() {
         if (Array.isArray(llmApisArray)) {
             let migratedLegacyDeepSeek = false;
             // 清空现有数据
-            addon.data.llmApis?.map.clear();
             // 加载数据到addon.data.llmApis和llmApiManager
             llmApisArray.forEach((llmApi: LLMApiData) => {
                 if (llmApi.key && llmApi.service) {
@@ -592,11 +611,53 @@ export function loadLLMApisFromPrefs() {
     } catch (error) {
         ztoolkit.log("Error loading LLM APIs from prefs:", error);
     }
-    ztoolkit.log("LLM APIs loaded from prefs:", addon.data.llmApis);
+    ztoolkit.log(
+        "LLM API configurations loaded:",
+        addon.data.llmApis?.map.size || 0,
+    );
 }
 
 function updateLLMApiTableUI() {
+    refreshTranslationServiceOptions();
     setTimeout(() => addon.data.prefs?.tableHelper?.treeInstance.invalidate());
+}
+
+export function refreshTranslationServiceOptions() {
+    const doc = addon.data.prefs?.window?.document;
+    if (!doc) return;
+    const apis = Array.from(addon.data.llmApis?.map.values() || []);
+    for (const [engine, pref] of [
+        ["pdf2zh", "service"],
+        ["pdf2zh_next", "next_service"],
+    ] as const) {
+        const select = doc.getElementById(
+            `zotero-prefpane-${config.addonRef}-${pref}Select`,
+        ) as HTMLSelectElement | null;
+        const input = doc.getElementById(
+            `zotero-prefpane-${config.addonRef}-${pref}`,
+        ) as HTMLInputElement | null;
+        if (!select) continue;
+        const choices = translationServiceChoices(engine, apis);
+        const current = getPref(pref)?.toString() || "";
+        const selected = selectedTranslationService(choices, current);
+        select.replaceChildren();
+        for (const choice of choices) {
+            const option = doc.createElement("option");
+            option.value = choice.value;
+            option.textContent = choice.label;
+            select.appendChild(option);
+        }
+        if (!choices.length) {
+            const placeholder = doc.createElement("option");
+            placeholder.value = "";
+            placeholder.textContent = prefText("noActiveService");
+            select.appendChild(placeholder);
+        }
+        select.disabled = !choices.length;
+        select.value = selected;
+        if (input) input.value = selected;
+        if (current !== selected) setPref(pref, selected);
+    }
 }
 
 function setButtonDisabled(button: XUL.Button, disabled: boolean) {
@@ -614,7 +675,10 @@ function getRowData(index: number) {
     }
     return {
         key: llmApi.key || "",
-        service: llmApi.service || "",
+        service:
+            canonicalService(llmApi.service) === "openailiked"
+                ? "Chat Compatible"
+                : llmApi.service || "",
         model: llmApi.model || "",
         apiUrl: llmApi.apiUrl || "",
         apiKey: llmApi.apiKey || "",
@@ -662,6 +726,7 @@ function handleEngineChange(engine: string) {
         ztoolkit.log("窗口对象不存在");
         return;
     }
+    refreshTranslationServiceOptions();
     // 获取所有class为pdf2x-config的元素
     const pdf2xConfigs = window.document.getElementsByClassName("pdf2x-config");
     for (const configElement of pdf2xConfigs as any as HTMLElement[]) {

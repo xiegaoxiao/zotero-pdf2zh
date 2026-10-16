@@ -6,6 +6,8 @@ pref-config-basic    = PDF2zh翻译配置
 pref-serverip        = Python服务器IP地址
 pref-engine          = 翻译引擎
 pref-service         = 翻译服务
+pref-enableThinking  = 启用深度思考
+pref-thinking-recommendation = 默认关闭（推荐）
 pref-threadNum       = 翻译线程数
 pref-qps             = 最大QPS(每秒请求数)
 pref-poolSize        = 最大并发Worker数(0=跟随QPS)

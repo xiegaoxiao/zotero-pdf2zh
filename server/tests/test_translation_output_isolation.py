@@ -70,7 +70,7 @@ class TranslationOutputIsolationTest(unittest.TestCase):
     def test_repaired_retry_produces_a_complete_new_pair(self):
         calls=[]
         def execute(cmd,*args):
-            self.assertEqual(args[-1],{'ZOTERO_PDF2ZH_TRANSLATE_REFERENCES':'0'})
+            self.assertEqual(args[-1],{'ZOTERO_PDF2ZH_TRANSLATE_REFERENCES':'0', 'ZOTERO_PDF2ZH_THINKING_MODE':'disabled'})
             calls.append(cmd)
             if len(calls)==2:
                 self.staged_outputs(cmd)
@@ -84,7 +84,15 @@ class TranslationOutputIsolationTest(unittest.TestCase):
     def test_reference_translation_opt_in_is_forwarded_to_child(self):
         self.config.translate_references=True
         def execute(cmd,*args):
-            self.assertEqual(args[-1],{'ZOTERO_PDF2ZH_TRANSLATE_REFERENCES':'1'})
+            self.assertEqual(args[-1],{'ZOTERO_PDF2ZH_TRANSLATE_REFERENCES':'1', 'ZOTERO_PDF2ZH_THINKING_MODE':'disabled'})
+            self.staged_outputs(cmd)
+        with patch.object(server,'execute_with_progress',side_effect=execute):
+            self.translator.translate_pdf_next('paper.pdf',self.config)
+
+    def test_explicit_thinking_choice_is_forwarded_to_the_child(self):
+        self.config.thinking_mode = 'enabled'
+        def execute(cmd,*args):
+            self.assertEqual(args[-1]['ZOTERO_PDF2ZH_THINKING_MODE'], 'enabled')
             self.staged_outputs(cmd)
         with patch.object(server,'execute_with_progress',side_effect=execute):
             self.translator.translate_pdf_next('paper.pdf',self.config)
@@ -96,6 +104,14 @@ class TranslationOutputIsolationTest(unittest.TestCase):
         with patch.object(server,'execute_with_progress',side_effect=execute),patch.object(server,'_repair_damaged_pdf',return_value=None):
             with self.assertRaisesRegex(RuntimeError,'引擎执行失败'):
                 self.translator.translate_pdf_next('paper.pdf',self.config)
+        self.assert_old_outputs_unchanged()
+
+    def test_cancelled_translation_never_retries_or_publishes_old_outputs(self):
+        with patch.object(server,'execute_with_progress',side_effect=server.TaskCancelledError('cancelled')) as execute, patch.object(server,'_repair_damaged_pdf') as repair:
+            with self.assertRaises(server.TaskCancelledError):
+                self.translator.translate_pdf_next('paper.pdf', self.config)
+            execute.assert_called_once()
+            repair.assert_not_called()
         self.assert_old_outputs_unchanged()
 
     def test_mono_only_request_does_not_require_a_dual_output(self):

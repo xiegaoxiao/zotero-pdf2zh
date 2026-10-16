@@ -151,7 +151,7 @@ v4.0.3 用的是仓库里的 `raw/main/server.zip`。新版本改为 Release 附
 如果当前还是 v4.1.0，请手动下载后覆盖本地 `server` 目录（保留 `config` 和虚拟环境）：
 
 ```text
-https://github.com/guaguastandup/zotero-pdf2zh/releases/latest/download/server.zip
+https://github.com/xiegaoxiao/zotero-pdf2zh/releases/latest/download/server.zip
 https://gitee.com/guaguastandup/zotero-pdf2zh/raw/v4.1.1/server.zip
 ```
 
@@ -172,7 +172,7 @@ https://gitee.com/guaguastandup/zotero-pdf2zh/raw/v4.1.1/server.zip
 ### 解决方案
 
 1. **手动下载**
-   - 从 [Gitee Release](https://gitee.com/guaguastandup/zotero-pdf2zh/releases) 或 [GitHub Release](https://github.com/guaguastandup/zotero-pdf2zh/releases/latest/download/server.zip) 下载 `server.zip`
+   - 从 [Gitee Release](https://gitee.com/guaguastandup/zotero-pdf2zh/releases) 或 [GitHub Release](https://github.com/xiegaoxiao/zotero-pdf2zh/releases/latest/download/server.zip) 下载 `server.zip`
    - 不要使用 Gitee 源码归档 `repository/archive/*.zip`
    - 将下载的文件移动到 zotero-pdf2zh 文件夹
    - 手动解压：

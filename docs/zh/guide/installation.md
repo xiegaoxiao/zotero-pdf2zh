@@ -18,7 +18,7 @@
 请从 GitHub Release 下载 `server.zip`，不要再使用仓库 `main` 分支中的静态 zip：
 
 ```text
-https://github.com/guaguastandup/zotero-pdf2zh/releases/latest/download/server.zip
+https://github.com/xiegaoxiao/zotero-pdf2zh/releases/latest/download/server.zip
 ```
 
 下载后解压，目录结构应为：
@@ -174,7 +174,7 @@ python server.py --enable_venv=False
 最新 XPI：
 
 ```text
-https://github.com/guaguastandup/zotero-pdf2zh/releases/latest/download/zotero-pdf-2-zh.xpi
+https://github.com/xiegaoxiao/zotero-pdf2zh/releases/latest/download/zotero-pdf-2-zh.xpi
 ```
 
 安装步骤：

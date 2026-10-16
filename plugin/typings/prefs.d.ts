@@ -22,6 +22,7 @@ declare namespace _ZoteroTypes {
       "threadNum": number;
       "qps": number;
       "poolSize": number;
+      "enableThinking": boolean;
       "rename": boolean;
       "showProgress": boolean;
       "skipSubsetFonts": boolean;

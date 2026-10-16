@@ -44,3 +44,8 @@ server/config/*.backup*
 server/config/*.local.*
 server/**/*.before_zotero_layout_repair
 *.pyc
+
+# Release artifacts are published as GitHub Release assets.
+/artifacts/
+/server.zip
+/*.xpi

@@ -111,41 +111,13 @@
                 <html:input
                     id="zotero-prefpane-__addonRef__-service"
                     preference="extensions.zotero.__addonRef__.service"
-                    type="text"
-                    flex="1"
-                    style="width: 105px; text-align: center"
+                    type="hidden"
                 />
                 <html:select
                     id="zotero-prefpane-__addonRef__-serviceSelect"
                     preference="extensions.zotero.__addonRef__.service"
-                    style="width: 130px; text-align: center"
+                    style="width: 300px"
                 >
-                    <html:option value="bing">Bing</html:option>
-                    <html:option value="google">Google</html:option>
-
-                    <html:option value="openailiked">OpenAILiked</html:option>
-                    <html:option value="deepseek">DeepSeek</html:option>
-                    <html:option value="openai">OpenAI</html:option>
-                    <html:option value="gemini">Gemini</html:option>
-                    <html:option value="silicon">SiliconFlow</html:option>
-                    <html:option value="zhipu">Zhipu</html:option>
-                    <html:option value="modelscope">ModelScope</html:option>
-                    <html:option value="qwen-mt">Qwen-MT</html:option>
-
-                    <html:option value="deepl">DeepL</html:option>
-                    <html:option value="tencent">Tencent</html:option>
-                    <html:option value="grok">Grok</html:option>
-
-                    <html:option value="dify">Dify</html:option>
-                    <html:option value="argos">Argos</html:option>
-                    <html:option value="ollama">Ollama</html:option>
-                    <html:option value="xinference">XInference</html:option>
-                    <html:option value="anythingllm">AnythingLLM</html:option>
-
-                    <html:option value="azure-openai">Azure OpenAI</html:option>
-                    <html:option value="azure">Azure</html:option>
-
-                    <html:option value="groq">Groq</html:option>
                 </html:select>
             </hbox>
         </hbox>
@@ -164,48 +136,13 @@
                 <html:input
                     id="zotero-prefpane-__addonRef__-next_service"
                     preference="extensions.zotero.__addonRef__.next_service"
-                    type="text"
-                    flex="1"
-                    style="width: 105px; text-align: center"
+                    type="hidden"
                 />
                 <html:select
                     id="zotero-prefpane-__addonRef__-next_serviceSelect"
                     preference="extensions.zotero.__addonRef__.next_service"
-                    style="width: 130px; text-align: center"
+                    style="width: 300px"
                 >
-                    <html:option value="siliconflowfree"
-                        >SiliconFlow Free</html:option
-                    >
-                    <html:option value="bing">Bing</html:option>
-                    <html:option value="google">Google</html:option>
-
-                    <html:option value="openailiked">OpenAILiked</html:option>
-                    <html:option value="AliyunDashScope"
-                        >AliyunDashScope</html:option
-                    >
-                    <html:option value="deepseek">DeepSeek</html:option>
-                    <html:option value="openai">OpenAI</html:option>
-                    <html:option value="gemini">Gemini</html:option>
-                    <html:option value="silicon">SiliconFlow</html:option>
-                    <html:option value="zhipu">Zhipu</html:option>
-                    <html:option value="modelscope">ModelScope</html:option>
-                    <html:option value="qwen-mt">Qwen-MT</html:option>
-
-                    <html:option value="deepl">DeepL</html:option>
-                    <html:option value="tencent">Tencent</html:option>
-                    <html:option value="grok">Grok</html:option>
-
-                    <html:option value="dify">Dify</html:option>
-                    <html:option value="argos">Argos</html:option>
-                    <html:option value="ollama">Ollama</html:option>
-                    <html:option value="xinference">XInference</html:option>
-                    <html:option value="anythingllm">AnythingLLM</html:option>
-
-                    <html:option value="azure-openai">Azure OpenAI</html:option>
-                    <html:option value="azure">Azure</html:option>
-
-                    <html:option value="groq">Groq</html:option>
-                    <html:option value="claudecode">claudecode</html:option>
                 </html:select>
             </hbox>
         </hbox>
@@ -262,6 +199,20 @@
                     preference="extensions.zotero.__addonRef__.skipLastPages"
                     type="number"
                     style="width: 50px; text-align: center"
+                />
+            </hbox>
+            <hbox align="center" flex="1">
+                <checkbox
+                    id="zotero-prefpane-__addonRef__-enableThinking"
+                    preference="extensions.zotero.__addonRef__.enableThinking"
+                />
+                <html:label
+                    for="zotero-prefpane-__addonRef__-enableThinking"
+                    data-l10n-id="pref-enableThinking"
+                />
+                <html:span
+                    data-l10n-id="pref-thinking-recommendation"
+                    style="color: #777; margin-left: 6px"
                 />
             </hbox>
             <hbox align="center" flex="1">

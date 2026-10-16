@@ -24,7 +24,7 @@ RUN sed -i 's/deb.debian.org/mirrors.aliyun.com/g' /etc/apt/sources.list.d/debia
 RUN uv pip install --system --no-cache-dir flask pypdf toml
 
 # 接收 server.py 的下载地址作为构建参数
-ARG SERVER_URL=https://github.com/guaguastandup/zotero-pdf2zh/releases/download/v3.0.32/server.zip
+ARG SERVER_URL=https://github.com/xiegaoxiao/zotero-pdf2zh/releases/latest/download/server.zip
 # 下载并解压 server.zip
 RUN wget -O server.zip $SERVER_URL && \
     unzip server.zip && \

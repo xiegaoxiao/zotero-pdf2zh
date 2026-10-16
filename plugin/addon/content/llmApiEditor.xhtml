@@ -177,6 +177,22 @@ href="chrome://zotero/skin/zotero.css" type="text/css"?>
             line-height: 1.5;
             margin: 4px 0 8px;
         }
+        .api-test-status {
+            margin: 10px 0 0;
+            font-size: 12px;
+            line-height: 1.5;
+            white-space: pre-line;
+            overflow-wrap: anywhere;
+        }
+        .api-test-status:empty {
+            display: none;
+        }
+        .api-test-status.error {
+            color: #c0392b;
+        }
+        .api-test-status.success {
+            color: #247348;
+        }
     </style>
 
     <head>
@@ -198,20 +214,16 @@ href="chrome://zotero/skin/zotero.css" type="text/css"?>
                     ><span class="required">*</span></label
                 >
                 <div class="input-group">
-                    <input
-                        id="service"
-                        class="input-group-left"
-                        type="text"
-                        placeholder="选择或输入服务 (如: deepseek)"
-                    />
+                    <input id="service" type="hidden" />
                     <select
                         id="serviceselect"
-                        class="input-group-select"
+                        class="input-group-left"
                     ></select>
                     <button
                         type="button"
                         id="btn-del-service"
                         class="input-group-delete"
+                        style="display: none"
                         title="删除自定义服务"
                     >
                         ×
@@ -241,6 +253,11 @@ href="chrome://zotero/skin/zotero.css" type="text/css"?>
                         ×
                     </button>
                 </div>
+                <p
+                    id="zhipu-preset-hint"
+                    class="extra-fields-hint"
+                    hidden="hidden"
+                ></p>
             </div>
 
             <div class="form-group">
@@ -355,6 +372,12 @@ href="chrome://zotero/skin/zotero.css" type="text/css"?>
                     <button class="btn btn-primary" id="save-btn">保存</button>
                 </div>
             </div>
+            <p
+                id="api-test-status"
+                class="api-test-status"
+                role="status"
+                aria-live="polite"
+            ></p>
         </div>
 
         <script>
@@ -362,40 +385,9 @@ href="chrome://zotero/skin/zotero.css" type="text/css"?>
             // 1. 预设配置
             const DEFAULT_SERVICES = {
                 openailiked: {
-                    name: "OpenAI-Liked",
-                    models: [
-                        // deepseek
-                        "deepseek-v3-2-251201",
-                        "deepseek-v3-1-terminus",
-                        "deepseek-v3-1-250821", // 即将下线
-                        "deepseek-v3-250324",
-                        "deepseek-r1-250528",
-                        // kimi
-                        "kimi-k2-250905",
-                        // glm
-                        "glm-4-7-251222",
-                        // doubao 1.6
-                        "doubao-seed-1-6-251015",
-                        "doubao-seed-1-6-250615",
-                        "doubao-seed-1-6-flash-250615",
-                        "doubao-seed-1-6-thinking-250715", // 即将下线
-                        "doubao-seed-1-6-thinking-250615", // 即将下线
-                        "doubao-seed-translation-250915",
-                        // doubao 1.8
-                        "doubao-seed-1-8-251228",
-                        // doubao 2.0
-                        "doubao-seed-2-0-pro-260215",
-                        "doubao-seed-2-0-lite-260215",
-                        "doubao-seed-2-0-mini-260215",
-                        "doubao-seed-2-0-code-preview-260215",
-                        // doubao 1.5
-                        "doubao-1-5-lite-32k-250115",
-                        "doubao-1-5-thinking-pro-250415", // 即将下线
-                    ],
-                    urls: ["https://ark.cn-beijing.volces.com/api/v3"],
-                    modelListUrl:
-                        "https://console.volcengine.com/ark/region:ark+cn-beijing/openManagement?LLM=%7B%7D&advancedActiveKey=model",
-                    extraData: [],
+                    name: "Chat Compatible",
+                    models: [],
+                    urls: ["https://api.openai.com/v1"],
                 },
                 openai: {
                     name: "OpenAI",
@@ -464,17 +456,22 @@ href="chrome://zotero/skin/zotero.css" type="text/css"?>
                 zhipu: {
                     name: "Zhipu",
                     models: [
+                        "glm-4.5-flash",
+                        "glm-4.7-flash",
                         "glm-4-flash",
+                        "glm-4.7",
                         "glm-4.5",
                         "glm-4.5-x",
                         "glm-4.5-air",
                         "glm-4.5-airx",
                     ],
-                    urls: ["https://api.zhipu.com/v1"],
+                    urls: ["https://open.bigmodel.cn/api/paas/v4"],
+                    modelListUrl:
+                        "https://docs.bigmodel.cn/cn/guide/models/free/glm-4.7-flash",
                 },
                 deepseek: {
                     name: "DeepSeek",
-                    models: ["deepseek-v4-pro", "deepseek-v4-flash"],
+                    models: ["deepseek-v4-flash", "deepseek-v4-pro"],
                     urls: ["https://api.deepseek.com/v1"],
                     modelListUrl: "https://platform.deepseek.com/",
                 },
@@ -813,6 +810,8 @@ href="chrome://zotero/skin/zotero.css" type="text/css"?>
                         "DeepSeek 思考强度（仅在思考模式开启时生效）",
                     deprecatedDeepSeekModel:
                         "deepseek-chat / deepseek-reasoner 已停止支持，请选择 DeepSeek V4 模型。",
+                    zhipuPresetHint:
+                        "默认使用 glm-4.5-flash；内置模型可直接选择，无需先获取模型列表。",
                     extraFieldsHint:
                         "当前服务支持的额外字段：{fields}。不填则使用上游默认值。点「添加参数」后从下拉列表选择，也可选「自定义」手动输入。",
                     extraFieldsHintEmpty:
@@ -857,6 +856,8 @@ href="chrome://zotero/skin/zotero.css" type="text/css"?>
                         "DeepSeek reasoning effort (only used when thinking is enabled)",
                     deprecatedDeepSeekModel:
                         "deepseek-chat / deepseek-reasoner are no longer supported. Select a DeepSeek V4 model.",
+                    zhipuPresetHint:
+                        "Defaults to glm-4.5-flash. Built-in models can be selected without fetching the model list first.",
                     extraFieldsHint:
                         "Supported extra fields for this service: {fields}. Leave unset to use upstream defaults. Click Add, then pick from the dropdown, or choose Custom to type a key.",
                     extraFieldsHintEmpty:
@@ -949,6 +950,76 @@ href="chrome://zotero/skin/zotero.css" type="text/css"?>
                 return userHistory;
             }
 
+            function normalizeZhipuBaseUrl(value) {
+                const url = String(value || "")
+                    .trim()
+                    .replace(/\/+$/, "");
+                if (!url || /^https?:\/\/api\.zhipu\.com\/v1$/i.test(url)) {
+                    return DEFAULT_SERVICES.zhipu.urls[0];
+                }
+                return url;
+            }
+
+            function sanitizeZhipuHistory(userHistory) {
+                const urls = userHistory?.zhipu?.urls;
+                if (!Array.isArray(urls)) return userHistory;
+                const migrated = [...new Set(urls.map(normalizeZhipuBaseUrl))];
+                if (JSON.stringify(urls) !== JSON.stringify(migrated)) {
+                    userHistory.zhipu.urls = migrated;
+                    safeSetStorage(userHistory);
+                }
+                return userHistory;
+            }
+
+            function applyServiceDefaults(service, serviceChanged = false) {
+                if (service === "deepseek") {
+                    const modelInput = document.getElementById("model");
+                    if (
+                        !modelInput.value.trim() ||
+                        (serviceChanged &&
+                            !modelInput.value.startsWith("deepseek-"))
+                    ) {
+                        bindInputSelectValue(
+                            DEFAULT_SERVICES.deepseek.models[0],
+                            "model",
+                        );
+                    }
+                    const urlInput = document.getElementById("apiUrl");
+                    const url = urlInput.value.trim().replace(/\/+$/, "");
+                    if (
+                        !url ||
+                        (serviceChanged &&
+                            Object.entries(DEFAULT_SERVICES).some(
+                                ([key, config]) =>
+                                    key !== "deepseek" &&
+                                    config.urls?.includes(url),
+                            ))
+                    )
+                        urlInput.value = DEFAULT_SERVICES.deepseek.urls[0];
+                    return;
+                }
+                if (service !== "zhipu") return;
+                const modelInput = document.getElementById("model");
+                const model = modelInput.value.trim();
+                if (!model || (serviceChanged && !model.startsWith("glm-"))) {
+                    bindInputSelectValue(
+                        DEFAULT_SERVICES.zhipu.models[0],
+                        "model",
+                    );
+                }
+                const urlInput = document.getElementById("apiUrl");
+                const url = normalizeZhipuBaseUrl(urlInput.value);
+                const otherServiceDefault =
+                    serviceChanged &&
+                    Object.entries(DEFAULT_SERVICES).some(
+                        ([key, config]) =>
+                            key !== "zhipu" && config.urls?.includes(url),
+                    );
+                urlInput.value = otherServiceDefault
+                    ? DEFAULT_SERVICES.zhipu.urls[0]
+                    : url;
+            }
+
             document.addEventListener("DOMContentLoaded", function () {
                 initGlobals();
                 applyLocalization();
@@ -1015,7 +1086,9 @@ href="chrome://zotero/skin/zotero.css" type="text/css"?>
 
             // 加载数据，合并 Models, URLs 和 API Keys
             function loadAllData() {
-                const userHistory = sanitizeDeepSeekHistory(safeGetStorage());
+                const userHistory = sanitizeZhipuHistory(
+                    sanitizeDeepSeekHistory(safeGetStorage()),
+                );
                 mergedServices = JSON.parse(JSON.stringify(DEFAULT_SERVICES));
 
                 for (const key in userHistory) {
@@ -1044,6 +1117,13 @@ href="chrome://zotero/skin/zotero.css" type="text/css"?>
                     mergeArray("urls");
                     mergeArray("apiKeys"); // 新增：合并 API Key
                 }
+                // Keep the preferred Flash preset first even with old history.
+                mergedServices.zhipu.models = [
+                    ...new Set([
+                        ...DEFAULT_SERVICES.zhipu.models,
+                        ...mergedServices.zhipu.models,
+                    ]),
+                ];
             }
 
             // 保存历史 (Key, Model, URL)
@@ -1443,8 +1523,9 @@ href="chrome://zotero/skin/zotero.css" type="text/css"?>
                 const mode = modeRow.querySelector(".extra-value")?.value;
                 const effortSelect = effortRow.querySelector(".extra-value");
                 const enabled = mode === "enabled";
+                modeRow.style.display = "none";
                 if (effortSelect) effortSelect.disabled = !enabled;
-                effortRow.style.opacity = enabled ? "1" : "0.55";
+                effortRow.style.display = "none";
             }
 
             function syncDeepSeekThinkingFields(serviceKey) {
@@ -1508,7 +1589,15 @@ href="chrome://zotero/skin/zotero.css" type="text/css"?>
 
             // 各个字段的更新包装器
             function populateServiceOptions() {
-                const keys = Object.keys(mergedServices);
+                const keys = ["zhipu", "deepseek", "openailiked"];
+                // Keep a saved legacy provider editable without crowding new entries.
+                if (
+                    isEditMode &&
+                    currentData.service &&
+                    !keys.includes(currentData.service)
+                ) {
+                    keys.push(currentData.service);
+                }
                 const names = keys.map((k) => mergedServices[k].name || k); // 这里为了简单，value还是用key
                 // 这里逻辑稍不同，因为Service下拉框存的是key
                 const select = document.getElementById("serviceselect");
@@ -1520,12 +1609,15 @@ href="chrome://zotero/skin/zotero.css" type="text/css"?>
                 keys.forEach((k) => {
                     const option = document.createElement("option");
                     option.value = k;
-                    option.text = mergedServices[k].name || k;
+                    option.text = mergedServices[k]?.name || k;
                     select.appendChild(option);
                 });
             }
 
             function updateModelOptions(service) {
+                const hint = document.getElementById("zhipu-preset-hint");
+                hint.hidden = service !== "zhipu";
+                hint.textContent = t("zhipuPresetHint");
                 const list =
                     service &&
                     mergedServices[service] &&
@@ -1628,6 +1720,7 @@ href="chrome://zotero/skin/zotero.css" type="text/css"?>
                         currentData.apiUrl;
 
                 const currentService = document.getElementById("service").value;
+                applyServiceDefaults(currentService);
                 updateModelOptions(currentService);
                 updateUrlSelectOptions(
                     currentService,
@@ -1646,7 +1739,8 @@ href="chrome://zotero/skin/zotero.css" type="text/css"?>
 
                 if (currentData.extraData) {
                     for (const key in currentData.extraData)
-                        addExtraFieldRow(key, currentData.extraData[key]);
+                        if (key !== "llm_thinking_mode")
+                            addExtraFieldRow(key, currentData.extraData[key]);
                 }
                 syncDeepSeekThinkingFields(currentService);
                 refreshExtraFieldSuggestions();
@@ -1690,6 +1784,7 @@ href="chrome://zotero/skin/zotero.css" type="text/css"?>
                     bindInputSelectValue(val, "service");
                     // 只有当 serviceName 匹配时，或者用户清空时才尝试刷新列表；防止用户输入新名字时列表抖动
                     if (!val || mergedServices[val]) {
+                        applyServiceDefaults(val, true);
                         updateModelOptions(val);
                         updateUrlSelectOptions(
                             val,
@@ -1723,6 +1818,7 @@ href="chrome://zotero/skin/zotero.css" type="text/css"?>
                     // document.getElementById("model").value = "";
                     // 上面两行按需开启。如果你希望切换服务保留文字，就注释掉。
 
+                    applyServiceDefaults(val, true);
                     updateModelOptions(val);
                     updateUrlSelectOptions(val, apiUrlInput.value);
                     updateApiKeyOptions(
@@ -1796,6 +1892,7 @@ href="chrome://zotero/skin/zotero.css" type="text/css"?>
             }
 
             function saveLLMApi() {
+                applyServiceDefaults(document.getElementById("service").value);
                 let extraDataObject = {};
                 const rows = document
                     .getElementById("extra-fields-container")
@@ -1812,7 +1909,6 @@ href="chrome://zotero/skin/zotero.css" type="text/css"?>
                 const k = document.getElementById("apiKey").value;
                 const u = document.getElementById("apiUrl").value.trim();
                 const a = document.getElementById("activate").checked;
-
                 if (s === "deepseek" && DEPRECATED_DEEPSEEK_MODELS.has(m)) {
                     alert(t("deprecatedDeepSeekModel"));
                     return;

@@ -7,39 +7,31 @@ on:
 
 permissions:
   contents: write
-  issues: write
-  pull-requests: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
 
 jobs:
   release:
+    if: github.repository == 'xiegaoxiao/zotero-pdf2zh'
     runs-on: ubuntu-latest
     env:
-      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_REPO: xiegaoxiao/zotero-pdf2zh
     steps:
-      - name: Checkout
+      - name: Checkout tagged sources
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Verify tag matches plugin and Server versions
+      - name: Verify release tag
         run: |
           python - <<'PY'
-          import json
-          import os
-          import re
+          import json, os
           from pathlib import Path
-
-          tag = os.environ['GITHUB_REF_NAME']
-          expected = tag[1:] if tag.startswith('v') else tag
-          plugin_version = str(json.loads(Path('plugin/package.json').read_text(encoding='utf-8'))['version'])
-          server_text = Path('server/server.py').read_text(encoding='utf-8')
-          match = re.search(r'^__version__\s*=\s*["\x27]([^"\x27]+)["\x27]', server_text, re.MULTILINE)
-          if not match:
-              raise SystemExit('Could not find server __version__')
-          server_version = match.group(1)
-          print(f'tag={tag} plugin={plugin_version} server={server_version}')
-          if plugin_version != expected or server_version != expected:
-              raise SystemExit('Release tag does not match plugin/Server versions')
+          version = json.loads(Path('plugin/package.json').read_text())['version']
+          assert os.environ['GITHUB_REF_NAME'] == 'v' + version
           PY
 
       - name: Setup Python
@@ -48,73 +40,38 @@ jobs:
           python-version: '3.12'
 
       - name: Validate Server sources
-        run: |
-          python -m pip install --upgrade pip
-          python -m pip install toml packaging flask pypdf pymupdf
-          python -m compileall -q server
+        run: python -m compileall -q server automation/build_release.py
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: 'npm'
+          cache: npm
           cache-dependency-path: plugin/package-lock.json
 
       - name: Install plugin dependencies
-        run: cd plugin/ && npm ci
+        run: cd plugin && npm ci
 
-      - name: Lint plugin
-        run: cd plugin/ && npm run lint:check
+      - name: Check plugin
+        run: cd plugin && npm run lint:check && npm test && npm run build
 
-      - name: Build plugin
-        run: cd plugin/ && npm run build
+      - name: Build and verify every Release asset
+        run: python automation/build_release.py
 
-      - name: Verify canonical XPI exists
-        run: test -f plugin/build/zotero-pdf-2-zh.xpi
-
-      # Build and validate every artifact before creating/updating the GitHub
-      # Release. This prevents a failed Server packaging step from leaving a
-      # release that contains only the plugin artifact.
-      - name: Build server.zip from tagged source
+      - name: Publish versioned Release with canonical assets
         run: |
-          rm -f server.zip
-          zip -r server.zip server \
-            -x 'server/translated/*' \
-            -x 'server/zotero-pdf2zh-venv/*' \
-            -x 'server/zotero-pdf2zh-next-venv/*' \
-            -x 'server/zotero-pdf2zh-venv.staging/*' \
-            -x 'server/zotero-pdf2zh-next-venv.staging/*' \
-            -x 'server/zotero-pdf2zh-venv.backup/*' \
-            -x 'server/zotero-pdf2zh-next-venv.backup/*' \
-            -x 'server/config/config.json' \
-            -x 'server/config/config.toml' \
-            -x 'server/config/venv.json' \
-            -x 'server/config/package_update_state.json' \
-            -x 'server/config/*.invalid.bak' \
-            -x 'server/config/*.invalid.*.bak' \
-            -x 'server/__pycache__/*' \
-            -x 'server/*/__pycache__/*' \
-            -x 'server/**/*.pyc' \
-            -x '.DS_Store'
-          unzip -l server.zip | head -80
-          unzip -l server.zip | grep -q 'server/server.py'
-          unzip -l server.zip | grep -q 'server/config/config.toml.example'
-          unzip -l server.zip | grep -q 'server/update_packages.py'
-          unzip -l server.zip | grep -q 'server/utils/deepseek_thinking.py'
+          tag="$GITHUB_REF_NAME"
+          version="${tag#v}"
+          if ! gh release view "$tag" >/dev/null 2>&1; then
+            gh release create "$tag" --verify-tag --draft --title "$tag" --notes-file "docs/releases/$tag.md"
+          fi
+          gh release upload "$tag" artifacts/release/zotero-pdf-2-zh.xpi artifacts/release/server.zip artifacts/release/SHA256SUMS artifacts/release/update.json artifacts/release/update-beta.json --clobber
+          gh release edit "$tag" --draft=false --prerelease=false --latest
 
-      - name: Release plugin to GitHub
+      - name: Publish Zotero update feeds after XPI is available
         run: |
-          cd plugin/ && npm run release
-          sleep 1s
-
-      - name: Upload canonical Release assets
-        run: |
-          gh release upload ${{ github.ref_name }} plugin/build/zotero-pdf-2-zh.xpi --clobber
-          gh release upload ${{ github.ref_name }} server.zip --clobber
-
-      - name: Notify release
-        uses: apexskier/github-release-commenter@v1
-        continue-on-error: true
-        with:
-          comment-template: |
-            :rocket: _This ticket has been resolved in {release_tag}. See {release_link} for release notes._
+          if gh release view release >/dev/null 2>&1; then
+            gh release upload release artifacts/release/update.json artifacts/release/update-beta.json --clobber
+          else
+            gh release create release artifacts/release/update.json artifacts/release/update-beta.json --target "$GITHUB_SHA" --title "Zotero update manifests" --notes "Plugin update feeds. Download the XPI and Server from the versioned Release." --prerelease --latest=false
+          fi

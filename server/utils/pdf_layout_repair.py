@@ -107,7 +107,7 @@ def normalize_drop_cap_words(page, config=None):
             if not c.char_unicode or not c.char_unicode.isascii() or not c.char_unicode.isalpha():
                 break
             word.append(c)
-        if not 3 <= len(word) <= 15 or len(chars) <= len(word):
+        if not 2 <= len(word) <= 15 or len(chars) <= len(word):
             continue
         if not chars[len(word)].char_unicode.isspace():
             continue
@@ -119,7 +119,10 @@ def normalize_drop_cap_words(page, config=None):
             continue
         if any(c.vertical or c.formula_layout_id for c in word):
             continue
-        if any(not 0.85 * size <= c.pdf_style.font_size <= 1.15 * size for c in word[1:]):
+        # TeX small capitals commonly use 80% of the body size. They are
+        # ordinary letters, although the preceding drop cap makes the engine
+        # mistake the entire suffix for a corner mark.
+        if any(not 0.7 * size <= c.pdf_style.font_size <= 1.15 * size for c in word[1:]):
             continue
         # A drop cap starts the first prose line at its left edge, with the
         # following small capitals on that line, rather than an exponent.
@@ -127,8 +130,29 @@ def normalize_drop_cap_words(page, config=None):
             continue
         if not all(abs(c.box.y - body.box.y) <= size * 0.4 for c in word[1:]):
             continue
-        for c in word:
+        if word[0].box.y > body.box.y - size * 0.5:
+            continue  # A large inline initial or superscript is not a drop cap.
+        if any(getattr(b.box, 'x', 0) - getattr(a.box, 'x2', b.box.x) > size * 0.5
+               for a, b in zip(word, word[1:])):
+            continue
+        for index, c in enumerate(word):
             c.pdf_style = copy(body.pdf_style)
+            # Normalize the baseline as well as the font. Keeping the original
+            # oversized glyph box can carry a false first-line height into
+            # translation/typesetting, even after formula detection is fixed.
+            c.box = copy(c.box)
+            c.box.y, c.box.y2 = body.box.y, body.box.y + size
+            if index + 1 < len(word):
+                # Prevent the spacing heuristic from inserting "F ACIAL".
+                c.box.x2 = word[index + 1].box.x
+            visual = getattr(c, 'visual_bbox', None)
+            if visual is not None and visual.box is not None:
+                c.visual_bbox = copy(visual)
+                c.visual_bbox.box = copy(c.box)
+        text = getattr(para, 'unicode', None)
+        if text:
+            prefix = r'^\s*' + r'\s*'.join(re.escape(c.char_unicode) for c in word)
+            para.unicode = re.sub(prefix, ''.join(c.char_unicode for c in word), text, count=1)
 
 
 def center_translated_title(paragraph, config):

@@ -11,7 +11,7 @@ import urllib.request
 import zipfile
 
 
-OWNER = "guaguastandup"
+OWNER = "xiegaoxiao"
 REPO = "zotero-pdf2zh"
 USER_AGENT = "zotero-pdf2zh-server-updater"
 NOTICE_RELATIVE_PATH = "server/notice.json"
@@ -30,7 +30,11 @@ def _server_version_from_file(path):
     return match.group(1) if match else None
 
 
-def _source_order(preferred):
+def _source_order(preferred, owner=None):
+    # This fork is published on GitHub. Do not invent a Gitee mirror or
+    # silently install an upstream build over the fork's customizations.
+    if (owner or OWNER) == 'xiegaoxiao':
+        return ['github']
     preferred = "gitee" if str(preferred).strip().lower() == "gitee" else "github"
     other = "github" if preferred == "gitee" else "gitee"
     return [preferred, other]
@@ -104,7 +108,7 @@ def get_xpi_info_from_repo(owner, repo, branch="main", expected_version=None, up
     gitee_url = f"https://gitee.com/{owner}/{repo}/releases/download/{tag}/{target_filename}"
     urls = [
         gitee_url if source == "gitee" else github_url
-        for source in _source_order(update_source)
+        for source in _source_order(update_source, owner)
     ]
     return urls, target_filename
 
@@ -174,7 +178,7 @@ def _server_download_urls(owner, repo, expected_version, update_source):
         else f"https://github.com/{owner}/{repo}/releases/latest/download/server.zip"
     )
     urls = []
-    for source in _source_order(update_source):
+    for source in _source_order(update_source, owner):
         if source == "github":
             urls.append(github_release)
             if tag:
@@ -504,7 +508,7 @@ def fetch_and_show_notices(local_version, update_source="gitee"):
 
 def check_for_updates(local_version, update_source="github"):
     print("🔍 [自动更新] 正在检查 Server 更新...")
-    print("   将同时尝试 GitHub 与 Gitee，优先使用配置的更新源。")
+    print("   本 Fork 从 GitHub Release 检查更新。")
     found = []
     for source in _source_order(update_source):
         try:

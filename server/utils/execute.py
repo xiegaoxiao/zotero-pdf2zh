@@ -8,7 +8,7 @@ from datetime import datetime
 
 from utils.deepseek_thinking import prepare_deepseek_runtime_command
 from utils.environment_lifecycle import managed_python_env
-from utils.task_manager import task_manager
+from utils.task_manager import task_manager, TaskCancelledError
 
 # Match lines like: "translate ... 10/100"
 # MAIN_PROGRESS_RE = re.compile(r"\btranslate\b[^\r\n]*?(\d+)/(\d+)\b", re.IGNORECASE)
@@ -168,6 +168,7 @@ def _write_pty_chunk(data, leftover, task_id):
 
 def execute_with_progress(cmd, task_id, args, env_manager, extra_env=None):
     """Execute translation command and update task progress in real time."""
+    task_manager.check_cancelled(task_id)
     final_cmd = cmd
     final_env = os.environ.copy()
     final_env["PYTHONUNBUFFERED"] = "1"
@@ -200,10 +201,29 @@ def execute_with_progress(cmd, task_id, args, env_manager, extra_env=None):
 
     print(f"[execute_with_progress] {' '.join(final_cmd)}\n")
 
-    if sys.platform != "win32":
-        _execute_with_pty(final_cmd, final_env, task_id, child_cols, child_rows)
-    else:
-        _execute_with_inherit(final_cmd, final_env, task_id, cols)
+    task_manager.check_cancelled(task_id)
+    try:
+        if sys.platform != "win32":
+            _execute_with_pty(final_cmd, final_env, task_id, child_cols, child_rows)
+        else:
+            _execute_with_inherit(final_cmd, final_env, task_id, cols)
+    except subprocess.CalledProcessError:
+        task_manager.check_cancelled(task_id)
+        raise
+    task_manager.check_cancelled(task_id)
+
+def run_cancellable(cmd, task_id, **kwargs):
+    """subprocess.run equivalent with task-scoped process registration."""
+    task_manager.check_cancelled(task_id)
+    process = subprocess.Popen(cmd, **kwargs)
+    try:
+        task_manager.register_process(task_id, process)
+        stdout, stderr = process.communicate()
+        task_manager.check_cancelled(task_id)
+        return subprocess.CompletedProcess(cmd, process.returncode, stdout, stderr)
+    finally:
+        task_manager.unregister_process(task_id, process)
+
 
 def _parse_progress(text, task_id):
     """Parse progress info from text and update task_manager."""
@@ -334,11 +354,13 @@ def _execute_with_pty(final_cmd, final_env, task_id, cols, rows):
         env=final_env,
         bufsize=0,
         close_fds=True,
+        start_new_session=True,
     )
     os.close(slave_fd)
     leftover = b""
 
     try:
+        task_manager.register_process(task_id, process)
         while True:
             readable, _, _ = select.select([master_fd], [], [], 0.1)
             if master_fd in readable:
@@ -378,6 +400,8 @@ def _execute_with_pty(final_cmd, final_env, task_id, cols, rows):
         except Exception:
             pass
         raise
+    finally:
+        task_manager.unregister_process(task_id, process)
 
 
 def _monitor_windows_console_translate_progress(task_id, stop_event):
@@ -692,6 +716,7 @@ def _execute_with_inherit(final_cmd, final_env, task_id, cols):
         bufsize=0,
         text=False,
     )
+    task_manager.register_process(task_id, process)
 
     # _debug_progress_log("EXECUTE_START", task_id=task_id, cmd=" ".join(final_cmd))
 
@@ -714,6 +739,7 @@ def _execute_with_inherit(final_cmd, final_env, task_id, cols):
     try:
         return_code = process.wait()
     finally:
+        task_manager.unregister_process(task_id, process)
         stop_event.set()
         monitor_thread.join(timeout=1.5)
         width_guard_thread.join(timeout=1.0)

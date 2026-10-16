@@ -34,7 +34,7 @@ powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | ie
 mkdir zotero-pdf2zh && cd zotero-pdf2zh
 
 # Download and extract server from the latest Release
-curl -L -o server.zip https://github.com/guaguastandup/zotero-pdf2zh/releases/latest/download/server.zip
+curl -L -o server.zip https://github.com/xiegaoxiao/zotero-pdf2zh/releases/latest/download/server.zip
 unzip server.zip
 
 # Enter server folder
@@ -47,7 +47,7 @@ python server.py
 
 ### Step 3: Install Plugin
 
-1. Download the latest plugin: [v4.1.1](https://github.com/guaguastandup/zotero-pdf2zh/releases/latest/download/zotero-pdf-2-zh.xpi)
+1. Download the latest plugin: [v4.1.1](https://github.com/xiegaoxiao/zotero-pdf2zh/releases/latest/download/zotero-pdf-2-zh.xpi)
 2. In Zotero, open "Tools → Add-ons"
 3. Drag the xpi file into the add-ons window
 4. Restart Zotero if needed

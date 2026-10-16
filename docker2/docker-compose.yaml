@@ -9,7 +9,7 @@ services:
                 # 使用社区维护的、更新更频繁的 next 引擎镜像
                 - ZOTERO_PDF2ZH_FROM_IMAGE=awwaawwa/pdfmathtranslate-next:latest
                 # 指定要下载的 server.zip 版本
-                - SERVER_URL=https://raw.githubusercontent.com/guaguastandup/zotero-pdf2zh/main/server.zip
+                - SERVER_URL=https://github.com/xiegaoxiao/zotero-pdf2zh/releases/latest/download/server.zip
         container_name: zotero-pdf2zh-v3
         restart: unless-stopped
         ports:

@@ -31,6 +31,15 @@ operation-error-crop-compare-terminal = This PDF is already a Cropped Bilingual 
 operation-error-compare-terminal = This PDF is already a Bilingual Compare result. Select the original or a dual attachment instead.
 
 operation-error-no-selection = Select an item or PDF attachment first.
+operation-cancel-batch = Cancel this batch
+operation-close-progress = Close window (continue in background)
+operation-cancelling = Cancelling. Waiting for the server to stop…
+operation-cancelled = Task cancelled
+operation-cancel-failed = Cancellation failed: { $message }
+operation-cancel-unsupported = The server did not confirm cancellation. Update and restart the translation server, then retry. The current task may still be running.
+operation-progress-file-cancelled = Cancelled: { $fileName }
+operation-batch-cancelled = Stopped: { $succeeded } succeeded, { $failed } failed, { $cancelled } cancelled
+operation-error-no-active-service = Activate an API configuration in PDF2zh preferences, or use SiliconFlow Free with pdf2zh_next.
 operation-error-unknown = Unknown error
 operation-error-prefix = Error: { $message }
 operation-error-single-file = Failed to process { $fileName }: { $message }
