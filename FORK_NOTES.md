@@ -1,6 +1,6 @@
 # Fork 维护说明
 
-本仓库基于 [guaguastandup/zotero-pdf2zh](https://github.com/guaguastandup/zotero-pdf2zh)，保留原作者署名、提交历史和 AGPL-3.0 许可证。以下改动主要位于 Python 服务端；当前没有另外发布插件 XPI 或服务端压缩包。
+本仓库基于 [guaguastandup/zotero-pdf2zh](https://github.com/guaguastandup/zotero-pdf2zh)，保留原作者署名、提交历史和 AGPL-3.0 许可证。以下改动涉及 Python 服务端及插件设置界面。插件版本为 `4.1.8-fork.1`，更新地址指向本 Fork，避免自动更新时覆盖自定义设置。
 
 ## 新增修复
 
@@ -8,6 +8,7 @@
 2. **PDF 排版与字体**：处理重叠文本检测框、重复字形、首字下沉、部分跨页句子和居中标题；补充短小的旋转文字标签；保留原有简单 TrueType 字体，避免压缩字体时将数字画成错误的字形；纯数字刻度序列保留原有位置和样式。
 3. **加粗一致性**：含粗细变化的段落保留源字重，即使请求关闭富文本翻译也保留强调边界；跨页句子前后保持粗体，普通正文维持常规字重。含字重变化的长段落不因超过 40 个占位符而整段丢弃样式。
 4. **术语 JSON 兼容**：仅在术语对象完整、响应只缺最后一个数组右括号且严格校验通过时补齐 `]`；其他 JSON 损坏仍保留警告，不猜测或补写术语内容。
+5. **参考文献默认保留原文**：新增“翻译参考文献”开关，默认关闭；按章节与分栏识别参考文献，跨页生效，同页正文继续翻译。详见 [设置说明与识别范围](server/doc/reference-translation.md)。
 
 详见 [翻译输出处理](server/doc/translation-errors.md) 和 [PDF 排版修复](server/doc/layout-repair.md)。
 
@@ -26,9 +27,10 @@ python -m unittest discover -s tests -p test_openai_config_compat.py -v
 python -m unittest discover -s tests -p test_download_filename_routing.py -v
 python -m unittest discover -s tests -p test_source_font_weight.py -v
 python -m unittest discover -s tests -p test_term_json_repair.py -v
+python -m unittest discover -s tests -p test_reference_filter.py -v
 ```
 
-以上共 48 项测试，不需要调用翻译 API。中文字体相关的一项测试在缺少 BabelDOC 缓存字体时跳过。数字字体测试使用自行生成的合成字形文件，未分发个人论文或第三方字体。
+以上共 60 项测试，不需要调用翻译 API。中文字体相关的一项测试在缺少 BabelDOC 缓存字体时跳过。数字字体测试使用自行生成的合成字形文件，未分发个人论文或第三方字体。插件在 `plugin` 目录运行 `npm ci`、`npm test` 和 `npm run build`；XPI 位于 `plugin/build/`，可通过 Zotero 插件管理器“从文件安装插件”安装。
 
 ## 与上游同步
 

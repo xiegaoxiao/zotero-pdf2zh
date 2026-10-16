@@ -1055,6 +1055,7 @@ export class PDF2zhHelperFactory {
             noWatermark: getPref("noWatermark")?.toString() || "",
             saveGlossary: getPref("saveGlossary")?.toString() || "",
             disableGlossary: getPref("disableGlossary")?.toString() || "",
+            translateReferences: getPref("translateReferences")?.toString() || "false",
             noDual: getPref("noDual")?.toString() || "",
             noMono: getPref("noMono")?.toString() || "",
             skipClean: getPref("skipClean")?.toString() || "",

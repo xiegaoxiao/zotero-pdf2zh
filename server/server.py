@@ -1152,6 +1152,7 @@ class PDFTranslator:
             if not config.no_dual:
                 output_path.append(watermark_dual)
 
+        reference_env = {'ZOTERO_PDF2ZH_TRANSLATE_REFERENCES': '1' if config.translate_references else '0'}
         execution_error = None
         if args.enable_winexe and os.path.exists(args.winexe_path):
             cmd = [f"{args.winexe_path}"] + cmd[1:]  # Windows可执行文件
@@ -1234,13 +1235,13 @@ class PDFTranslator:
             # 使用 execute_with_progress 替代原来的 execute_in_env
             # 实时解析子进程输出中的进度信息并更新 task_manager
             try:
-                execute_with_progress(cmd, task_id, args, self.env_manager)
+                execute_with_progress(cmd, task_id, args, self.env_manager, reference_env)
             except subprocess.CalledProcessError as exc:
                 execution_error = exc
                 print(f"⚠️ 翻译引擎退出失败，准备检查输入 PDF：{exc}")
         else:
             try:
-                execute_with_progress(cmd, task_id, args, None)
+                execute_with_progress(cmd, task_id, args, None, reference_env)
             except subprocess.CalledProcessError as exc:
                 execution_error = exc
                 print(f"⚠️ 翻译引擎退出失败，准备检查输入 PDF：{exc}")
@@ -1260,9 +1261,9 @@ class PDFTranslator:
                 ]
                 try:
                     if args.enable_venv:
-                        execute_with_progress(retry_cmd, task_id, args, self.env_manager)
+                        execute_with_progress(retry_cmd, task_id, args, self.env_manager, reference_env)
                     else:
-                        execute_with_progress(retry_cmd, task_id, args, None)
+                        execute_with_progress(retry_cmd, task_id, args, None, reference_env)
                     execution_error = None
                 except Exception as retry_error:
                     execution_error = retry_error

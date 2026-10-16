@@ -70,6 +70,7 @@ class TranslationOutputIsolationTest(unittest.TestCase):
     def test_repaired_retry_produces_a_complete_new_pair(self):
         calls=[]
         def execute(cmd,*args):
+            self.assertEqual(args[-1],{'ZOTERO_PDF2ZH_TRANSLATE_REFERENCES':'0'})
             calls.append(cmd)
             if len(calls)==2:
                 self.staged_outputs(cmd)
@@ -79,6 +80,14 @@ class TranslationOutputIsolationTest(unittest.TestCase):
         self.assertEqual(PdfReader(self.mono).metadata.title,'new')
         self.assertEqual(PdfReader(self.dual).metadata.title,'new')
         self.assertNotEqual(calls[0][calls[0].index('--output')+1],str(self.root))
+
+    def test_reference_translation_opt_in_is_forwarded_to_child(self):
+        self.config.translate_references=True
+        def execute(cmd,*args):
+            self.assertEqual(args[-1],{'ZOTERO_PDF2ZH_TRANSLATE_REFERENCES':'1'})
+            self.staged_outputs(cmd)
+        with patch.object(server,'execute_with_progress',side_effect=execute):
+            self.translator.translate_pdf_next('paper.pdf',self.config)
 
     def test_nonzero_exit_is_failure_even_when_files_exist(self):
         def execute(cmd,*args):

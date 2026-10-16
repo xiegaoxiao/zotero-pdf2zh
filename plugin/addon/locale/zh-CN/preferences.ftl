@@ -60,3 +60,6 @@ pref-llmapi-edit      = 编辑
 pref-llmapi-activate  = 激活
 pref-llmapi-totop     = 置顶
 pref-check-connection = 检查连接
+
+pref-translateReferences = 翻译参考文献（默认关闭）
+    .title = 关闭时保留自动识别的参考文献区原文。需要本分支服务端及托管的 pdf2zh_next 环境；无标题的参考文献可能无法识别。

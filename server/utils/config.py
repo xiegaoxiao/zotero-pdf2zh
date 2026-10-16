@@ -189,6 +189,7 @@ class Config:
         self.no_watermark = stringToBoolean(request_data.get('noWatermark', True))
         self.save_auto_extracted_glossary = stringToBoolean(request_data.get('saveGlossary', False))
         self.disable_glossary = stringToBoolean(request_data.get('disableGlossary', False))
+        self.translate_references = stringToBoolean(request_data.get('translateReferences', False))
         self.no_dual = stringToBoolean(request_data.get('noDual', False))
         self.no_mono = stringToBoolean(request_data.get('noMono', False))
         self.skip_clean = stringToBoolean(request_data.get('skipClean', False))

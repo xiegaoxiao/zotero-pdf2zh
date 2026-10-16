@@ -166,7 +166,7 @@ def _write_pty_chunk(data, leftover, task_id):
     return leftover
 
 
-def execute_with_progress(cmd, task_id, args, env_manager):
+def execute_with_progress(cmd, task_id, args, env_manager, extra_env=None):
     """Execute translation command and update task progress in real time."""
     final_cmd = cmd
     final_env = os.environ.copy()
@@ -187,6 +187,10 @@ def execute_with_progress(cmd, task_id, args, env_manager):
         final_env = managed_python_env(final_env)
         # venv env is copied from os.environ and would undo COLUMNS/LINES.
         _apply_terminal_size_env(final_env, child_cols, child_rows)
+
+    # Keep per-job switches isolated from concurrent translations.
+    if extra_env:
+        final_env.update(extra_env)
 
     # DeepSeek V4 is special: the plugin stores the user's choice in generic
     # extraData, while pdf2zh_next 2.9+ exposes that choice as explicit CLI

@@ -44,6 +44,7 @@ export interface ServerConfig {
     dualMode: string;
     saveGlossary: string;
     disableGlossary: string;
+    translateReferences: string;
     noDual: string;
     noMono: string;
     skipClean: string;
