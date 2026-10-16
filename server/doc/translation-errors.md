@@ -1,5 +1,27 @@
 # 翻译失败后误报成功与列表越界修复
 
+## 启动时报 `cannot import name 'BitStream'`
+
+BabelDOC 0.6.2 使用 `from bitstring import BitStream`，但其依赖只声明
+`bitstring>=4.3.0`。bitstring 5 已移除 `BitStream`，新装或更新环境可能因此在
+引擎导入阶段退出，尚未读取 PDF 或调用翻译接口。参见
+[bitstring 5 官方迁移说明](https://bitstring.readthedocs.io/en/latest/upgrading_to_version_5.html#replace-stream-classes-with-reader)。
+
+在 PowerShell 中进入自己的 `server` 目录，使用日志里同一个翻译环境执行：
+
+```powershell
+uv pip install --python .\zotero-pdf2zh-next-venv\Scripts\python.exe --reinstall "bitstring>=4.3.0,<5"
+.\zotero-pdf2zh-next-venv\Scripts\python.exe -I -c "from bitstring import BitStream; assert BitStream('0xff').read('uint:8') == 255; print('BitStream OK')"
+```
+
+第二条命令输出 `BitStream OK` 后，重启服务并重试翻译。Conda 用户应将 Python
+路径改为实际 Conda 翻译环境的 `python.exe`，使用该解释器的
+`-I -m pip install --force-reinstall "bitstring>=4.3.0,<5"`。
+
+仓库的 uv/Conda 配置模板已增加兼容范围，启动配置迁移会同步到旧配置并保留用户额外依赖。
+启动前及安装后的健康检查会验证 `BitStream` 的实际读取功能，失败时进入已有依赖修复流程，
+不会仅凭包版本元数据宣布环境可用。请同时更新服务端源码，避免旧版更新脚本再次安装不兼容版本。
+
 ## 问题
 
 引擎报告 `Babeldoc translation error: New` 后，服务仍打印 mono 文件生成成功，随后读取 `retList[1]` 时出现 `list index out of range`。

@@ -50,7 +50,7 @@ PRIMARY_PACKAGES = {
 }
 VERSION_PACKAGES = {
     "pdf2zh": ["pdf2zh", "BabelDOC", "PyMuPDF", "pypdf"],
-    "pdf2zh_next": ["pdf2zh-next", "BabelDOC", "PyMuPDF", "pypdf"],
+    "pdf2zh_next": ["pdf2zh-next", "BabelDOC", "PyMuPDF", "pypdf", "bitstring"],
 }
 THINKING_FLAGS = (
     "--deepseek-thinking-mode",
@@ -620,13 +620,14 @@ def managed_runtime_health(
     engine: str,
     python_path: Path,
 ) -> tuple[bool, str]:
-    """Quickly verify native dependencies resolve inside a managed runtime.
+    """Quickly verify critical dependencies inside a managed runtime.
 
     Metadata-only checks miss damaged binary wheels. In particular, Pydantic 2
     can leave importable Python wrappers while ``_pydantic_core`` is absent or
     is accidentally resolved from a global Python installation. Avoid the
     heavyweight pdf2zh_next CLI startup and import only its small critical
-    native dependency chain.
+    dependency chain. BabelDOC 0.6.2 also needs BitStream, which bitstring 5
+    removed despite satisfying BabelDOC's unbounded dependency requirement.
     """
     if engine != "pdf2zh_next":
         return True, "ok"
@@ -634,7 +635,7 @@ def managed_runtime_health(
     code = (
         "import importlib, json, os, sys; "
         "root=os.path.normcase(os.path.realpath(sys.prefix)); "
-        "names=('pydantic','pydantic_core','pydantic_core._pydantic_core'); "
+        "names=('pydantic','pydantic_core','pydantic_core._pydantic_core','bitstring'); "
         "out={'ok': True, 'reason': 'ok', 'root': root}; "
         "\ntry:\n"
         "    for name in names:\n"
@@ -649,9 +650,12 @@ def managed_runtime_health(
         "            inside=False\n"
         "        if not inside:\n"
         "            raise RuntimeError(name + ' 来自托管环境之外: ' + origin)\n"
+        "    from bitstring import BitStream\n"
+        "    if BitStream('0xff').read('uint:8') != 255:\n"
+        "        raise RuntimeError('bitstring BitStream 读取校验失败')\n"
         "except Exception as exc:\n"
         "    out={'ok': False, 'reason': type(exc).__name__ + ': ' + str(exc), 'root': root}\n"
-        "print(json.dumps(out, ensure_ascii=False))"
+        "print(json.dumps(out, ensure_ascii=True))"
     )
     try:
         result = subprocess.run(

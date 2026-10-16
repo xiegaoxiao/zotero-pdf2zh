@@ -1,4 +1,6 @@
+import json
 import os
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -7,7 +9,9 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from utils import execute
-from utils.environment_lifecycle import _build_install_command
+from utils.environment_lifecycle import DEFAULT_VENV_CONFIG, _build_install_command
+from utils.environment_lifecycle import load_requirements
+from utils.config_migration import migrate_config_file
 from utils.environment_lifecycle import managed_python_env
 from utils.environment_lifecycle import managed_runtime_health
 from utils.environment_lifecycle import runtime_supports_deepseek_thinking
@@ -51,6 +55,59 @@ class ManagedEnvironmentIsolationTest(unittest.TestCase):
                 )
 
         self.assertTrue(healthy, reason)
+
+    def probe_with_bitstring(self, body):
+        # Exercise the real isolated subprocess and probe using a substitute
+        # dependency, without modifying any installed environment files.
+        real_run = subprocess.run
+
+        def run_with_substitute(cmd, **kwargs):
+            cmd = list(cmd)
+            prelude = (
+                "import os, sys, types; "
+                "fake=types.ModuleType('bitstring'); "
+                "fake.__file__=os.path.join(sys.prefix,'bitstring','__init__.py'); "
+                f"exec({body!r}, fake.__dict__); "
+                "sys.modules['bitstring']=fake; "
+            )
+            cmd[-1] = prelude + cmd[-1]
+            return real_run(cmd, **kwargs)
+
+        with patch('utils.environment_lifecycle.subprocess.run', side_effect=run_with_substitute):
+            return managed_runtime_health('pdf2zh_next', Path(sys.executable))
+
+    def test_health_probe_rejects_bitstring_without_bitstream(self):
+        healthy, reason = self.probe_with_bitstring('__version__ = "5.0.0"')
+        self.assertFalse(healthy)
+        self.assertIn('BitStream', reason)
+
+    def test_health_probe_checks_bitstream_reads(self):
+        healthy, reason = self.probe_with_bitstring(
+            'class BitStream:\n'
+            '    def __init__(self, data): pass\n'
+            '    def read(self, fmt): return 0\n'
+        )
+        self.assertFalse(healthy)
+        self.assertIn('BitStream', reason)
+
+    def test_legacy_config_receives_bitstring_constraint_and_keeps_user_extras(self):
+        defaults = json.loads(DEFAULT_VENV_CONFIG.read_text(encoding='utf-8'))
+        with tempfile.TemporaryDirectory() as temp_dir:
+            active = Path(temp_dir) / 'venv.json'
+            example = active.with_name('venv.json.example')
+            example.write_text(json.dumps(defaults), encoding='utf-8')
+            current = json.loads(json.dumps(defaults))
+            for tool in ('uv', 'conda'):
+                current['pdf2zh_next'][tool]['packages'] = [
+                    'pdf2zh_next==2.9.0', 'bitstring==5.0.0', 'my-private-helper==1.0',
+                ]
+            active.write_text(json.dumps(current), encoding='utf-8')
+            migrate_config_file(active)
+            for tool in ('uv', 'conda'):
+                _, requirements = load_requirements('pdf2zh_next', tool, active)
+                self.assertIn('bitstring>=4.3.0,<5', requirements)
+                self.assertNotIn('bitstring==5.0.0', requirements)
+                self.assertIn('my-private-helper==1.0', requirements)
 
     def test_repair_reinstalls_only_after_a_managed_environment_is_unhealthy(self):
         names = {
