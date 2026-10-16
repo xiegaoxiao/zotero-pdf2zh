@@ -161,6 +161,28 @@ def install_layout_repair(env_dir):
             high_level = high_level.replace(reference_anchor, reference_hook + reference_anchor, 1)
             ast.parse(high_level)
             changes.append((high_level_file, high_level))
+        layout_file = site / 'babeldoc/docvision/doclayout.py'
+        layout_source = layout_file.read_text(encoding='utf8')
+        original_layout_source = layout_source
+        performance_import = 'from zotero_pdf_layout_performance import cpu_session_options, cached_layout_predict\n'
+        performance_hooks = [
+            ('import pymupdf\n', 'import pymupdf\n' + performance_import),
+            ('            providers=providers,\n', '            providers=providers,\n            sess_options=cpu_session_options(onnxruntime, providers),\n'),
+            ('    def predict(self, image, imgsz=800, batch_size=16, **kwargs):\n', '    @cached_layout_predict\n    def predict(self, image, imgsz=800, batch_size=16, **kwargs):\n'),
+        ]
+        for anchor, replacement in performance_hooks:
+            if replacement not in layout_source:
+                if layout_source.count(anchor) != 1:
+                    raise RuntimeError('Unsupported BabelDOC layout performance hook; no files changed')
+                layout_source = layout_source.replace(anchor, replacement, 1)
+        if layout_source != original_layout_source:
+            ast.parse(layout_source)
+            changes.append((layout_file, layout_source))
+        performance_module = Path(__file__).with_name('layout_performance.py').read_text(encoding='utf8')
+        performance_helper = site / 'zotero_pdf_layout_performance.py'
+        performance_changed = not performance_helper.exists() or performance_helper.read_text(encoding='utf8') != performance_module
+        if performance_changed:
+            performance_helper.write_text(performance_module, encoding='utf8')
         reference_module = Path(__file__).with_name('reference_filter.py').read_text(encoding='utf8')
         reference_helper = site / 'zotero_pdf_reference_filter.py'
         reference_changed = not reference_helper.exists() or reference_helper.read_text(encoding='utf8') != reference_module
@@ -191,7 +213,7 @@ def install_layout_repair(env_dir):
             if not backup.exists():
                 backup.write_bytes(target.read_bytes())
             target.write_text(source, encoding='utf8')
-    return bool(changes) or helper_changed or rotated_changed or subset_changed or term_changed or reference_changed
+    return bool(changes) or helper_changed or rotated_changed or subset_changed or term_changed or reference_changed or performance_changed
 
 
 if __name__ == '__main__':
