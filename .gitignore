@@ -32,3 +32,15 @@ LOG.md
 _debug_progress.log
 
 server/dev/
+
+# Local runtime data and credentials must not enter source commits.
+server/.venv/
+server/tmp/
+server/output/
+server/translated_*/
+server/diag_*/
+server/config/*.bak
+server/config/*.backup*
+server/config/*.local.*
+server/**/*.before_zotero_layout_repair
+*.pyc

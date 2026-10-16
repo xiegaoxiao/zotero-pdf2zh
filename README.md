@@ -4,6 +4,8 @@
 
 <h2 id="title">Zotero PDF2zh</h2>
 
+> 本 Fork 基于 [guaguastandup/zotero-pdf2zh](https://github.com/guaguastandup/zotero-pdf2zh)，增加翻译失败处理、PDF 排版及字体修复。改动范围、验证方法和与上游同步的说明见 [Fork 维护说明](./FORK_NOTES.md)。保留原项目署名与 AGPL-3.0 许可证。
+
 [![zotero target version](https://img.shields.io/badge/Zotero-7-red?style=flat-square&logo=zotero&logoColor=CC2936)](https://www.zotero.org)
 [![zotero target version](https://img.shields.io/badge/Zotero-8-orange?style=flat-square&logo=zotero&logoColor=CC2936)](https://www.zotero.org/support/beta_builds)
 [![zotero target version](https://img.shields.io/badge/Zotero-9-yellow?style=flat-square&logo=zotero&logoColor=CC2936)](https://www.zotero.org/support/beta_builds)

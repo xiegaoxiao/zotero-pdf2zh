@@ -370,6 +370,11 @@ class VirtualEnvManager:
         _, env_dir, python_path = existing
         bin_dir = env_dir / ("Scripts" if self.is_windows else "bin")
 
+        if engine == "pdf2zh_next":
+            from utils.install_layout_repair import install_layout_repair
+            if install_layout_repair(env_dir):
+                print("🛠️ 已应用 PDF 排版、旋转标签与原始字体编码修复。")
+
         if command[0].lower() in {"pdf2zh", "pdf2zh_next"}:
             executable = bin_dir / (command[0] + (".exe" if self.is_windows else ""))
             if executable.exists():
